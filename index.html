@@ -43,9 +43,10 @@ window._state = {
 
 // ── AUTH LISTENER ─────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async fbUser => {
+  document.getElementById("appLoader").style.display="flex";
   if (fbUser) {
     const snap = await getDoc(doc(db, "users", fbUser.uid));
-    if (!snap.exists()) { await signOut(auth); return; }
+    if (!snap.exists()) { await signOut(auth); document.getElementById("appLoader").style.display="none"; document.getElementById("authSection").style.display="flex"; return; }
     const d = snap.data();
     if (d.status === "suspended") {
       await signOut(auth);
@@ -560,7 +561,8 @@ function renderSidebarUser(){
 }
 
 function showApp(){
-  hide("authSection"); show("appSection");
+  document.getElementById("appLoader").style.display="none";
+  document.getElementById("authSection").style.display="none"; document.getElementById("appSection").style.display="flex";
   const {role}=window._state;
   const isAdmin=["admin","super_admin"].includes(role);
   const isSA=role==="super_admin";
@@ -572,7 +574,7 @@ function showApp(){
   renderCartBadge();
   showView("shop");
 }
-function showAuth(){ show("authSection"); hide("appSection"); }
+function showAuth(){ document.getElementById("appLoader").style.display="none"; document.getElementById("authSection").style.display="flex"; document.getElementById("appSection").style.display="none"; }
 
 // ── VIEW ROUTER ───────────────────────────────────────────────────────────────
 window.showView = v => {
@@ -599,7 +601,7 @@ window.openProfileModal = () => {
 function fv(id){ return (document.getElementById(id)?.value||"").trim(); }
 function setVal(id,v){ const e=document.getElementById(id); if(e) e.value=v||""; }
 function setText(id,v){ const e=document.getElementById(id); if(e) e.textContent=v; }
-function show(id){ document.getElementById(id).style.display=""; }
+function show(id){ const el=document.getElementById(id); el.style.display=(id==="appSection")?"flex":""; }
 function hide(id){ document.getElementById(id).style.display="none"; }
 function clearFields(ids){ ids.forEach(id=>setVal(id,"")); }
 
@@ -986,6 +988,11 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 </head>
 <body>
 <div id="toastArea"></div>
+<div id="appLoader" style="display:none;position:fixed;inset:0;background:#0b0d11;z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <div style="width:44px;height:44px;border:3px solid #242838;border-top-color:#f0a500;border-radius:50%;animation:spin .8s linear infinite"></div>
+  <p style="color:#6b7494;font-size:14px;font-family:'DM Sans',sans-serif">Loading…</p>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 
 <!-- ═══ AUTH ══════════════════════════════════════════════════════════════════ -->
 <div id="authSection">
