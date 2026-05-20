@@ -267,7 +267,7 @@ window.openProduct = id => {
           ? `<p class="pd-stock ${parseInt(p.stock)>0?"in":"out"}">${parseInt(p.stock)>0?`✅ In Stock (${p.stock} units)`:"❌ Out of Stock"}</p>`:""}
         ${p.desc?`<p class="pd-desc">${p.desc}</p>`:""}
         <div class="pd-actions">
-          <button class="btn btn-primary" style="flex:1" onclick="addToCart('${id}');closePD()">🛒 Add to Cart</button>
+          <button class="btn btn-primary" style="flex:1" onclick="${p.link?`openBrowser('${p.link}');closePD()`:'showToast(\'No link set for this product\',\'error\')'}">🔗 Order Now</button>
           <button class="btn btn-ghost pd-wl ${isWL?"wl-on":""}" onclick="toggleWishlist('${id}');closePD()" title="Wishlist">${isWL?"❤️ Saved":"🤍 Save"}</button>
           ${p.link?`<a class="btn btn-ghost" href="${p.link}" target="_blank">🔗 Visit</a>`:""}
         </div>
@@ -337,7 +337,7 @@ function pCard(p,canEdit,wishlist,compact){
         <span class="pcard-price">RM ${parseFloat(p.price||0).toFixed(2)}</span>
         ${p.stock!==undefined&&p.stock!==""?`<span class="stock-tag ${parseInt(p.stock)>0?"in":"out"}">${parseInt(p.stock)>0?"In Stock":"Out"}</span>`:""}
       </div>
-      <button class="btn-addcart" onclick="event.stopPropagation();addToCart('${p.id}')">Add to Cart</button>
+      <button class="btn-addcart ${p.link?'':'btn-addcart-disabled'}" onclick="event.stopPropagation();${p.link?`openBrowser('${p.link}')`:'showToast(\'No link set for this product\',\'error\')'}">🔗 Order Now</button>
     </div>
   </div>`;
 }
@@ -572,7 +572,7 @@ function showApp(){
   document.getElementById("statUserCard").style.display=isSA?"":"none";
   renderSidebarUser();
   renderCartBadge();
-  showView("shop");
+  showView("merchant");
 }
 function showAuth(){ document.getElementById("appLoader").style.display="none"; document.getElementById("authSection").style.display="flex"; document.getElementById("appSection").style.display="none"; }
 
@@ -582,9 +582,8 @@ window.showView = v => {
   document.querySelectorAll(".nav-lnk").forEach(el=>el.classList.remove("active"));
   document.getElementById("view-"+v)?.classList.add("active");
   document.querySelector(`[data-view="${v}"]`)?.classList.add("active");
-  setText("topTitle",{shop:"Shop",dashboard:"Dashboard",products:"Manage Products",media:"Banners & Announcements",users:"User Management",cart:"My Cart",wishlist:"Wishlist"}[v]||v);
+  setText("topTitle",{merchant:"Merchant",dashboard:"Dashboard",products:"Manage Products",media:"Banners & Announcements",users:"User Management",wishlist:"Wishlist"}[v]||v);
   closeSidebar();
-  if(v==="cart")      renderCart();
   if(v==="wishlist")  renderWishlist();
   if(v==="users")     loadUsers();
   if(v==="dashboard") updateStats();
@@ -821,8 +820,8 @@ a{color:inherit;text-decoration:none}
 .stock-tag{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
 .stock-tag.in{background:rgba(39,201,122,.15);color:var(--ok)}
 .stock-tag.out{background:rgba(224,82,82,.15);color:var(--err)}
-.btn-addcart{width:100%;padding:8px;background:rgba(var(--aRGB),.1);border:1px solid rgba(var(--aRGB),.2);color:var(--accent);border-radius:8px;font-family:var(--body);font-size:13px;font-weight:500;cursor:pointer;transition:all .2s}
-.btn-addcart:hover{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.btn-addcart{width:100%;padding:8px;background:linear-gradient(135deg,rgba(240,165,0,.15),rgba(224,92,42,.12));border:1px solid rgba(var(--aRGB),.3);color:var(--accent);border-radius:8px;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;letter-spacing:.01em}
+.btn-addcart:hover{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent;transform:translateY(-1px);box-shadow:0 4px 14px rgba(240,165,0,.3)}
 
 /* ── PRODUCT DETAIL MODAL ────────────────────── */
 #pdModal{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.75);backdrop-filter:blur(10px);align-items:center;justify-content:center;padding:16px}
@@ -1012,7 +1011,6 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
           <span class="hero-pill">🔗 Direct Links</span>
           <span class="hero-pill">⭐ Featured Items</span>
           <span class="hero-pill">📢 Announcements</span>
-          <span class="hero-pill">🛒 Cart & Wishlist</span>
         </div>
       </div>
       <p style="font-size:12px;color:var(--muted)">Powered by Firebase · BigPOS Marketplace</p>
@@ -1054,11 +1052,8 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
     </div>
     <div class="nav-section">
       <div class="nav-label">Browse</div>
-      <button class="nav-lnk active" data-view="shop" onclick="showView('shop')"><span class="ico">🛍️</span>Shop</button>
-      <button class="nav-lnk" data-view="cart" onclick="showView('cart')">
-        <span class="ico">🛒</span>My Cart
-        <span class="cart-badge" style="margin-left:auto;position:static;background:var(--accent2);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;display:none"></span>
-      </button>
+      <button class="nav-lnk active" data-view="merchant" onclick="showView('merchant')"><span class="ico">🏪</span>Merchant</button>
+
       <button class="nav-lnk" data-view="wishlist"   onclick="showView('wishlist')"><span class="ico">❤️</span>Wishlist</button>
       <button class="nav-lnk" data-view="dashboard"  onclick="showView('dashboard')"><span class="ico">📊</span>Dashboard</button>
 
@@ -1097,7 +1092,6 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
         <input type="text" id="searchInput" placeholder="Search products…" oninput="filterProducts()"/>
       </div>
       <div class="top-acts">
-        <button class="ico-btn" onclick="showView('cart')" title="Cart">🛒<span class="cart-badge"></span></button>
         <button class="ico-btn" onclick="openProfileModal()" title="My Profile">👤</button>
       </div>
     </div>
@@ -1108,7 +1102,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
     <div class="content">
 
       <!-- ▸ SHOP ─────────────────────────────────────────────────────────── -->
-      <div id="view-shop" class="view active">
+      <div id="view-merchant" class="view active">
         <div id="bannerCarousel" style="display:none"></div>
         <div id="catBar"></div>
         <div id="featuredStrip" style="display:none">
@@ -1124,22 +1118,6 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
         </div>
       </div>
 
-      <!-- ▸ CART ──────────────────────────────────────────────────────────── -->
-      <div id="view-cart" class="view">
-        <div class="tbl-wrap">
-          <div id="cartItems"></div>
-          <div class="cart-foot">
-            <div>
-              <div class="cart-total-lbl">Order Total</div>
-              <div class="cart-total-val" id="cartTotal">RM 0.00</div>
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="btn btn-ghost" onclick="clearCart()">🗑️ Clear Cart</button>
-              <button class="btn btn-primary" onclick="showToast('Checkout coming soon! 🚀','success')">Proceed to Checkout →</button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- ▸ WISHLIST ───────────────────────────────────────────────────────── -->
       <div id="view-wishlist" class="view">
@@ -1178,7 +1156,6 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
               <thead><tr><th>Permission</th><th>User</th><th>Admin</th><th>Super</th></tr></thead>
               <tbody>
                 <tr><td>Browse Shop</td><td>✅</td><td>✅</td><td>✅</td></tr>
-                <tr><td>Cart & Wishlist</td><td>✅</td><td>✅</td><td>✅</td></tr>
                 <tr><td>Add Products</td><td>❌</td><td>✅</td><td>✅</td></tr>
                 <tr><td>Edit / Delete</td><td>❌</td><td>✅</td><td>✅</td></tr>
                 <tr><td>Feature Products</td><td>❌</td><td>✅</td><td>✅</td></tr>
@@ -1407,5 +1384,200 @@ document.addEventListener("keydown",e=>{
   }
 });
 </script>
+
+<!-- ═══ IN-APP BROWSER ═══════════════════════════════════════════════════════ -->
+<div id="inAppBrowser" style="display:none;position:fixed;inset:0;z-index:500;flex-direction:column;background:#0b0d11">
+  <!-- Browser chrome / toolbar -->
+  <div class="iab-toolbar">
+    <button class="iab-btn" onclick="iabBack()"    title="Back">&#8592;</button>
+    <button class="iab-btn" onclick="iabForward()" title="Forward">&#8594;</button>
+    <button class="iab-btn" onclick="iabReload()"  title="Reload">↻</button>
+    <div class="iab-url-wrap">
+      <span class="iab-url-icon">🔒</span>
+      <input class="iab-url-input" id="iabUrlInput" type="url" spellcheck="false"
+             onkeydown="if(event.key==='Enter')iabNavigate(this.value)"/>
+    </div>
+    <button class="iab-btn iab-open-ext" onclick="iabOpenExternal()" title="Open in browser">⎋</button>
+    <button class="iab-btn iab-close"    onclick="closeBrowser()"    title="Close">✕</button>
+  </div>
+  <!-- Loading bar -->
+  <div id="iabLoadBar"><div id="iabLoadFill"></div></div>
+  <!-- iFrame -->
+  <iframe id="iabFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+          allow="fullscreen" style="flex:1;border:none;background:#fff;width:100%"></iframe>
+  <!-- Fallback message shown when iframe is blocked -->
+  <div id="iabFallback" style="display:none;position:absolute;top:52px;left:0;right:0;bottom:0;background:#0b0d11;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:24px">
+    <div style="font-size:52px">🚫</div>
+    <h3 style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Can't load this page here</h3>
+    <p style="color:#6b7494;font-size:14px;max-width:340px;line-height:1.6">This website blocks embedding. Open it directly in your browser instead.</p>
+    <a id="iabExtLink" href="#" target="_blank" class="btn btn-primary" style="margin-top:4px">Open in Browser →</a>
+  </div>
+</div>
+
+<style>
+/* ── IN-APP BROWSER ────────────────────────────── */
+#inAppBrowser.open { display:flex; }
+.iab-toolbar {
+  display:flex; align-items:center; gap:6px;
+  padding:8px 12px; background:#13161e;
+  border-bottom:1px solid #242838; height:52px; flex-shrink:0;
+}
+.iab-btn {
+  background:#1a1e29; border:1px solid #242838; color:#eef0f7;
+  border-radius:8px; width:34px; height:34px; cursor:pointer;
+  font-size:16px; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:all .18s; font-family:'DM Sans',sans-serif;
+}
+.iab-btn:hover { background:#242838; }
+.iab-btn:disabled { opacity:.35; cursor:not-allowed; }
+.iab-url-wrap {
+  flex:1; display:flex; align-items:center; gap:8px;
+  background:#0b0d11; border:1px solid #242838; border-radius:10px;
+  padding:0 12px; height:34px; min-width:0;
+}
+.iab-url-icon { font-size:13px; flex-shrink:0; }
+.iab-url-input {
+  flex:1; background:transparent; border:none; outline:none;
+  color:#eef0f7; font-size:13px; font-family:'DM Sans',sans-serif;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+.iab-open-ext { font-size:14px; }
+.iab-close { background:#2a1a1a; border-color:#3d2020; color:#e05252; font-size:17px; }
+.iab-close:hover { background:#3d2020; }
+#iabLoadBar { height:3px; background:#1a1e29; flex-shrink:0; overflow:hidden; }
+#iabLoadFill { height:100%; width:0%; background:linear-gradient(90deg,#f0a500,#e05c2a); transition:width .3s; }
+/* Order Now button states */
+.btn-addcart-disabled { opacity:.45; cursor:not-allowed !important; }
+</style>
+
+<script>
+// ── IN-APP BROWSER ENGINE ─────────────────────────────────────────────────────
+let _iabCurrentUrl = '';
+let _iabHistory    = [];
+let _iabHistIdx    = -1;
+
+window.openBrowser = function(url) {
+  if (!url) { showToast('No link set for this product', 'error'); return; }
+  // Ensure absolute URL
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  _iabCurrentUrl = url;
+  document.getElementById('iabUrlInput').value = url;
+  document.getElementById('iabExtLink').href = url;
+  // push history
+  _iabHistory = _iabHistory.slice(0, _iabHistIdx + 1);
+  _iabHistory.push(url);
+  _iabHistIdx = _iabHistory.length - 1;
+  iabUpdateNavBtns();
+  // load
+  iabLoad(url);
+  document.getElementById('inAppBrowser').classList.add('open');
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeBrowser = function() {
+  const frame = document.getElementById('iabFrame');
+  frame.src = 'about:blank';
+  document.getElementById('inAppBrowser').classList.remove('open');
+  document.getElementById('iabFallback').style.display = 'none';
+  document.body.style.overflow = '';
+  iabSetLoad(0);
+};
+
+window.iabNavigate = function(url) {
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  _iabHistory = _iabHistory.slice(0, _iabHistIdx + 1);
+  _iabHistory.push(url);
+  _iabHistIdx = _iabHistory.length - 1;
+  iabUpdateNavBtns();
+  iabLoad(url);
+};
+
+window.iabBack = function() {
+  if (_iabHistIdx <= 0) return;
+  _iabHistIdx--;
+  iabLoad(_iabHistory[_iabHistIdx], true);
+  iabUpdateNavBtns();
+};
+
+window.iabForward = function() {
+  if (_iabHistIdx >= _iabHistory.length - 1) return;
+  _iabHistIdx++;
+  iabLoad(_iabHistory[_iabHistIdx], true);
+  iabUpdateNavBtns();
+};
+
+window.iabReload = function() {
+  const frame = document.getElementById('iabFrame');
+  iabLoad(_iabCurrentUrl, true);
+};
+
+window.iabOpenExternal = function() {
+  window.open(_iabCurrentUrl, '_blank');
+};
+
+function iabLoad(url, skipHistory) {
+  _iabCurrentUrl = url;
+  document.getElementById('iabUrlInput').value   = url;
+  document.getElementById('iabExtLink').href      = url;
+  document.getElementById('iabFallback').style.display = 'none';
+  const frame = document.getElementById('iabFrame');
+  // Animate load bar
+  iabSetLoad(30);
+  frame.style.opacity = '0.6';
+  frame.onload = () => {
+    iabSetLoad(100);
+    frame.style.opacity = '1';
+    setTimeout(() => iabSetLoad(0), 600);
+    // Detect X-Frame-Options block: if src loaded but content is blank/error
+    try {
+      // If cross-origin, contentDocument access will throw — that's fine (page loaded)
+      // If same-origin error page, we can detect it
+    } catch(e) {}
+  };
+  frame.onerror = () => {
+    iabSetLoad(0);
+    iabShowFallback();
+  };
+  frame.src = url;
+  // Fallback detection: some sites block iframes silently — detect via timeout
+  clearTimeout(frame._fbTimer);
+  frame._fbTimer = setTimeout(() => {
+    try {
+      // Try to detect a blank/blocked frame
+      const doc = frame.contentDocument;
+      if (doc && (doc.body.innerHTML === '' || doc.title === '')) {
+        iabShowFallback();
+      }
+    } catch(e) {
+      // Cross-origin = page loaded fine (CSP just prevents JS access)
+      // Don't show fallback
+    }
+  }, 6000);
+}
+
+function iabShowFallback() {
+  const fb = document.getElementById('iabFallback');
+  fb.style.display = 'flex';
+  document.getElementById('iabFrame').style.opacity = '0';
+}
+
+function iabSetLoad(pct) {
+  document.getElementById('iabLoadFill').style.width = pct + '%';
+}
+
+function iabUpdateNavBtns() {
+  document.querySelector('.iab-btn[onclick="iabBack()"]').disabled    = _iabHistIdx <= 0;
+  document.querySelector('.iab-btn[onclick="iabForward()"]').disabled = _iabHistIdx >= _iabHistory.length - 1;
+}
+
+// Close on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('inAppBrowser').classList.contains('open')) {
+    closeBrowser();
+  }
+});
+</script>
+
 </body>
 </html>
