@@ -60,7 +60,6 @@ onAuthStateChanged(auth, async fbUser => {
     try {
       const snapFirst = await getDoc(doc(db, 'users', fbUser.uid));
 
-      // If no Firestore doc exists, auto-create one with defaults
       if (!snapFirst.exists()) {
         console.log('No Firestore user doc — auto-creating');
         const defaultName = fbUser.displayName || fbUser.email.split('@')[0];
@@ -74,7 +73,6 @@ onAuthStateChanged(auth, async fbUser => {
         });
       }
 
-      // Always fetch fresh copy (whether just created or pre-existing)
       const snapFinal = await getDoc(doc(db, 'users', fbUser.uid));
       const d = snapFinal.data();
 
@@ -120,7 +118,6 @@ function startListeners() {
       cb();
     }, err => {
       console.warn('Firestore listener error for', key, err.code);
-      // Permission errors here mean Firestore rules need updating
       if (err.code === 'permission-denied') {
         showToast('Firestore rules error — update your security rules', 'error');
       }
@@ -135,7 +132,6 @@ function startListeners() {
 }
 
 // ── AUTH ACTIONS ──────────────────────────────────────────────────────────────
-// ── Auth helpers ─────────────────────────────────────────────────────────────
 window.authMsg = function(tabId, msg, type, extra) {
   const el = document.getElementById(tabId + 'Msg');
   if (!el) { showToast(msg, type==='success'?'success':'error'); return; }
@@ -209,9 +205,6 @@ window.doResetPassword = async () => {
 };
 
 // ── Register / First-time setup ───────────────────────────────────────────────
-// Works for brand new users AND for Firebase Console users who have no password.
-// If email already exists in Auth → error with clear instructions.
-// If Firestore doc already exists for a new UID → keeps existing role/status.
 window.doRegisterPublic = async () => {
   const name = fv('regName'), email = fv('regEmail'), pass = fv('regPass'), pass2 = fv('regPass2');
   clearAuthMsg('reg');
@@ -223,22 +216,18 @@ window.doRegisterPublic = async () => {
   setLoading('btnReg', true, 'Creating account…');
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    // Check if a Firestore doc already exists (pre-created by admin)
     const existing = await getDoc(doc(db, 'users', cred.user.uid));
     if (!existing.exists()) {
-      // Fresh user — create doc with user role
       await setDoc(doc(db, 'users', cred.user.uid), {
         name, email, role: 'user', status: 'active',
         createdAt: new Date().toISOString(), photoURL: ''
       });
     } else {
-      // Pre-created doc — just update the name if blank
       const d = existing.data();
       if (!d.name || d.name === email.split('@')[0]) {
         await updateDoc(doc(db, 'users', cred.user.uid), { name });
       }
     }
-    // onAuthStateChanged will fire and load the app
   } catch(e) {
     console.error('Register:', e.code);
     setLoading('btnReg', false, 'Create Account');
@@ -253,72 +242,8 @@ window.doRegisterPublic = async () => {
     authMsg('reg', friendlyErr(e.code), 'error', hint[e.code] || 'Error: ' + e.code);
   }
 };
+
 window.doLogout = () => signOut(auth);
-
-window.doResetPassword = async () => {
-  const email = fv('loginEmail');
-  clearAuthMsg();
-  if (!email) {
-    showAuthMsg('Enter your email address in the field above first.', 'error');
-    document.getElementById('loginEmail').focus();
-    return;
-  }
-  try {
-    await sendPasswordResetEmail(auth, email);
-    showAuthMsg(
-      '📧 Password setup email sent to ' + email,
-      'success',
-      'Check your inbox and spam folder. Click the link in the email to set your password, then come back and sign in here.'
-    );
-  } catch(e) {
-    console.error('Reset error:', e.code, e.message);
-    const extras = {
-      'auth/user-not-found': 'No Firebase Auth account exists for ' + email + '. Go to Firebase Console → Authentication → Add user, create the account with this email and any password, then come back and use "Forgot password?" to set the real password.',
-      'auth/invalid-email':  'The email address format is invalid.',
-      'auth/too-many-requests': 'Too many requests. Wait a few minutes and try again.',
-    };
-    showAuthMsg(
-      friendlyErr(e.code),
-      extras[e.code] || ('Error code: ' + e.code + '. Check Firebase Console.')
-    );
-  }
-};
-
-window.doRegisterPublic = async () => {
-  const name = fv('pubName'), email = fv('pubEmail'), pass = fv('pubPass');
-  const msgEl = document.getElementById('regMsgBox');
-  function regMsg(msg, type, extra) {
-    if (!msgEl) { showToast(msg, type); return; }
-    msgEl.style.display = 'block';
-    if (type === 'success') {
-      msgEl.style.background = 'rgba(39,201,122,.12)'; msgEl.style.border = '1px solid rgba(39,201,122,.3)'; msgEl.style.color = '#27c97a';
-    } else {
-      msgEl.style.background = 'rgba(224,82,82,.12)'; msgEl.style.border = '1px solid rgba(224,82,82,.3)'; msgEl.style.color = '#e05252';
-    }
-    msgEl.innerHTML = '<strong>' + msg + '</strong>' + (extra ? '<br><span style="font-size:12px;opacity:.85;margin-top:4px;display:block">' + extra + '</span>' : '');
-  }
-  if (msgEl) msgEl.style.display = 'none';
-  if (!name)  return regMsg('Please enter your name.', 'error');
-  if (!email) return regMsg('Please enter your email.', 'error');
-  if (!pass)  return regMsg('Please enter a password.', 'error');
-  if (pass.length < 6) return regMsg('Password must be at least 6 characters.', 'error');
-  setLoading('btnReg', true, 'Creating…');
-  try {
-    const c = await createUserWithEmailAndPassword(auth, email, pass);
-    await setDoc(doc(db,'users',c.user.uid), {
-      name, email, role:'user', status:'active',
-      createdAt: new Date().toISOString(), photoURL:''
-    });
-    // onAuthStateChanged will fire and load the app automatically
-  } catch(e) {
-    console.error('Register error:', e.code, e.message);
-    setLoading('btnReg', false, 'Create Account');
-    const extras = {
-      'auth/email-already-in-use': 'An account with this email already exists. Go to Sign In tab and log in, or use "Forgot password?" to reset your password.',
-    };
-    regMsg(friendlyErr(e.code), 'error', extras[e.code] || ('Error: ' + e.code));
-  }
-};
 
 window.doCreateUser = async () => {
   const name=fv('nuName'), email=fv('nuEmail'), pass=fv('nuPass'), role=fv('nuRole');
@@ -1357,6 +1282,8 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
         </p>
       </div>
     </div>
+  </div>
+</div>
 
 <!-- ═══ APP ══════════════════════════════════════════════════════════════════ -->
 <div id="appSection">
@@ -1746,12 +1673,10 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 <script>
 function switchAuthTab(name,btn){
-  // Only toggle within the auth form
   document.querySelectorAll('.auth-tabs .auth-tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.auth-form .tab-panel').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
-  // Clear messages when switching tabs
   ['loginMsg','regMsg'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display='none';
   });
