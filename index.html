@@ -138,53 +138,120 @@ function startListeners() {
 }
 
 // ── AUTH ACTIONS ──────────────────────────────────────────────────────────────
-// ── Auth message box helpers ─────────────────────────────────────────────────
-function showAuthMsg(msg, type, extra) {
-  const el = document.getElementById('authMsgBox');
-  if (!el) { showToast(msg, type); return; }
+// ── Auth helpers ─────────────────────────────────────────────────────────────
+function authMsg(tabId, msg, type, extra) {
+  const el = document.getElementById(tabId + 'Msg');
+  if (!el) { showToast(msg, type==='success'?'success':'error'); return; }
   el.style.display = 'block';
-  if (type === 'success') {
-    el.style.background = 'rgba(39,201,122,.12)';
-    el.style.border     = '1px solid rgba(39,201,122,.3)';
-    el.style.color      = '#27c97a';
-  } else {
-    el.style.background = 'rgba(224,82,82,.12)';
-    el.style.border     = '1px solid rgba(224,82,82,.3)';
-    el.style.color      = '#e05252';
-  }
+  const isOk = type === 'success';
+  el.style.cssText = 'display:block;border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:10px;line-height:1.6;'
+    + (isOk
+      ? 'background:rgba(39,201,122,.12);border:1px solid rgba(39,201,122,.3);color:#27c97a;'
+      : 'background:rgba(224,82,82,.12);border:1px solid rgba(224,82,82,.3);color:#e05252;');
   el.innerHTML = '<strong>' + msg + '</strong>'
-    + (extra ? '<br><span style="font-size:12px;opacity:.85;margin-top:4px;display:block">' + extra + '</span>' : '');
+    + (extra ? '<br><span style="font-size:12px;opacity:.9;margin-top:5px;display:block">' + extra + '</span>' : '');
 }
-window.clearAuthMsg = () => {
-  const el = document.getElementById('authMsgBox');
+function clearAuthMsg(tabId) {
+  const el = document.getElementById(tabId + 'Msg');
   if (el) el.style.display = 'none';
-};
+}
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Sign In ───────────────────────────────────────────────────────────────────
 window.doLogin = async () => {
   const email = fv('loginEmail'), pass = fv('loginPass');
-  clearAuthMsg();
-  if (!email) return showAuthMsg('Please enter your email address.', 'error');
-  if (!pass)  return showAuthMsg('Please enter your password.', 'error');
+  clearAuthMsg('login');
+  if (!email) return authMsg('login', 'Enter your email address.', 'error');
+  if (!pass)  return authMsg('login', 'Enter your password.', 'error');
   setLoading('btnLogin', true, 'Signing in…');
   try {
     await signInWithEmailAndPassword(auth, email, pass);
-    // onAuthStateChanged fires next — keep button loading
   } catch(e) {
-    console.error('Login error:', e.code, e.message);
+    console.error('Login:', e.code);
     setLoading('btnLogin', false, 'Sign In');
-    const extras = {
-      'auth/user-not-found':    'No Firebase Auth account exists for this email. Use the Register tab to create one, or ask your admin.',
-      'auth/wrong-password':    'Password is incorrect. Use "Forgot password?" to reset it.',
-      'auth/invalid-credential':'Email or password is incorrect. Use "Forgot password?" if you have not set a password yet.',
-      'auth/too-many-requests': 'Too many failed attempts. Wait a few minutes or reset your password.',
-      'auth/user-disabled':     'This account has been disabled in Firebase. Contact your admin.',
-      'auth/network-request-failed': 'Network error. Check your internet connection.',
+    const hint = {
+      'auth/user-not-found':         'No account found for this email. Use the <b>Register</b> tab to create one.',
+      'auth/wrong-password':         'Password is wrong. Use <b>Forgot password?</b> below to reset it.',
+      'auth/invalid-credential':     'Email or password is incorrect. If you just created this account in Firebase Console it has no password — use <b>Register</b> tab with the same email to set one.',
+      'auth/too-many-requests':      'Too many failed attempts — account temporarily locked. Wait 5 minutes or reset your password.',
+      'auth/user-disabled':          'Account disabled in Firebase. Contact your administrator.',
+      'auth/network-request-failed': 'Network error. Check your internet connection and try again.',
     };
-    showAuthMsg(
-      friendlyErr(e.code),
-      extras[e.code] || ('Error code: ' + e.code)
+    authMsg('login', friendlyErr(e.code), 'error', hint[e.code] || 'Error: ' + e.code);
+  }
+};
+
+// ── Forgot password ───────────────────────────────────────────────────────────
+window.doResetPassword = async () => {
+  const email = fv('loginEmail');
+  clearAuthMsg('login');
+  if (!email) {
+    authMsg('login', 'Enter your email in the field above first.', 'error');
+    document.getElementById('loginEmail').focus();
+    return;
+  }
+  setLoading('btnForgot', true, 'Sending…');
+  try {
+    await sendPasswordResetEmail(auth, email);
+    authMsg('login',
+      '📧 Reset email sent to ' + email,
+      'success',
+      'Check your inbox and spam folder. Click the link to set your password, then sign in here. Note: the link expires in 1 hour.'
     );
+  } catch(e) {
+    console.error('Reset:', e.code);
+    const hint = {
+      'auth/user-not-found': 'No Firebase Auth account for <b>' + email + '</b>. Go to the <b>Register</b> tab and register with this email and a new password. Your Firestore profile will be linked automatically.',
+      'auth/invalid-email':  'Email address format is invalid.',
+      'auth/too-many-requests': 'Too many requests. Wait a few minutes.',
+    };
+    authMsg('login', friendlyErr(e.code), 'error', hint[e.code] || 'Error: ' + e.code);
+  }
+  setLoading('btnForgot', false, 'Forgot password?');
+};
+
+// ── Register / First-time setup ───────────────────────────────────────────────
+// Works for brand new users AND for Firebase Console users who have no password.
+// If email already exists in Auth → error with clear instructions.
+// If Firestore doc already exists for a new UID → keeps existing role/status.
+window.doRegisterPublic = async () => {
+  const name = fv('regName'), email = fv('regEmail'), pass = fv('regPass'), pass2 = fv('regPass2');
+  clearAuthMsg('reg');
+  if (!name)  return authMsg('reg', 'Enter your full name.', 'error');
+  if (!email) return authMsg('reg', 'Enter your email address.', 'error');
+  if (!pass)  return authMsg('reg', 'Enter a password.', 'error');
+  if (pass.length < 6) return authMsg('reg', 'Password must be at least 6 characters.', 'error');
+  if (pass !== pass2)  return authMsg('reg', 'Passwords do not match.', 'error');
+  setLoading('btnReg', true, 'Creating account…');
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    // Check if a Firestore doc already exists (pre-created by admin)
+    const existing = await getDoc(doc(db, 'users', cred.user.uid));
+    if (!existing.exists()) {
+      // Fresh user — create doc with user role
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        name, email, role: 'user', status: 'active',
+        createdAt: new Date().toISOString(), photoURL: ''
+      });
+    } else {
+      // Pre-created doc — just update the name if blank
+      const d = existing.data();
+      if (!d.name || d.name === email.split('@')[0]) {
+        await updateDoc(doc(db, 'users', cred.user.uid), { name });
+      }
+    }
+    // onAuthStateChanged will fire and load the app
+  } catch(e) {
+    console.error('Register:', e.code);
+    setLoading('btnReg', false, 'Create Account');
+    const hint = {
+      'auth/email-already-in-use':
+        'An account with this email already exists in Firebase Auth. '
+        + 'Go to the <b>Sign In</b> tab and log in, or use <b>Forgot password?</b> to reset your password. '
+        + '<br><br>If you created this account in Firebase Console and never set a password, '
+        + 'you must first <b>delete that account in Firebase Console → Authentication → Users</b>, '
+        + 'then register here fresh.',
+    };
+    authMsg('reg', friendlyErr(e.code), 'error', hint[e.code] || 'Error: ' + e.code);
   }
 };
 window.doLogout = () => signOut(auth);
@@ -1179,6 +1246,11 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 .empty-icon{font-size:44px;margin-bottom:10px}
 .empty-msg{color:var(--muted);font-size:13px;padding:16px}
 .auth-tip{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:14px 0}
+.auth-divider::before,.auth-divider::after{content:"";flex:1;height:1px;background:var(--border)}
+.auth-divider span{font-size:11px;color:var(--muted);white-space:nowrap}
+.auth-notice{background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.25);border-radius:10px;padding:12px 14px;font-size:13px;color:#7ab8ff;line-height:1.6;margin-bottom:16px}
+.auth-notice em{font-style:normal;color:#aad4ff}
 .login-err{display:none;background:rgba(224,82,82,.12);border:1px solid rgba(224,82,82,.3);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--err);margin-bottom:12px;line-height:1.6}
 
 /* RESPONSIVE */
@@ -1227,59 +1299,65 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
     </div>
     <div class="auth-form">
       <div class="auth-tabs">
-        <button class="auth-tab active" onclick="switchAuthTab('login',this)">Sign In</button>
-        <button class="auth-tab" onclick="switchAuthTab('register',this)">Register</button>
+        <button class="auth-tab active" id="tabBtnLogin" onclick="switchAuthTab('login',this)">Sign In</button>
+        <button class="auth-tab"        id="tabBtnReg"   onclick="switchAuthTab('reg',this)">Register</button>
       </div>
 
-      <!-- SIGN IN TAB -->
+      <!-- ── SIGN IN ─────────────────────────────────────────────────────── -->
       <div id="tab-login" class="tab-panel active">
         <div class="field">
           <label>Email</label>
           <input type="email" id="loginEmail" placeholder="you@example.com"
+            autocomplete="email"
             onkeydown="if(event.key==='Enter')doLogin()"
-            oninput="clearAuthMsg()"/>
+            oninput="clearAuthMsg('login')"/>
         </div>
         <div class="field">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-            <label style="margin:0">Password</label>
-            <button type="button" onclick="doResetPassword()"
-              style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:var(--body);padding:0">
-              Forgot password?
-            </button>
-          </div>
+          <label>Password</label>
           <input type="password" id="loginPass" placeholder="••••••••"
+            autocomplete="current-password"
             onkeydown="if(event.key==='Enter')doLogin()"
-            oninput="clearAuthMsg()"/>
+            oninput="clearAuthMsg('login')"/>
         </div>
-
-        <!-- Message box (errors + success) -->
-        <div id="authMsgBox" style="display:none;border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:12px;line-height:1.7"></div>
-
+        <div id="loginMsg" style="display:none"></div>
         <button class="btn btn-primary btn-full" id="btnLogin" data-label="Sign In" onclick="doLogin()">Sign In</button>
-
-        <div style="text-align:center;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-          <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px">
-            Account created via Firebase Console?<br/>
-            Enter your email above then click:
-          </p>
-          <button onclick="doResetPassword()" class="btn btn-ghost" style="width:100%;font-size:13px">
-            📧 Send Password Setup Email
-          </button>
-        </div>
+        <button class="btn btn-ghost btn-full" id="btnForgot" data-label="Forgot password?" onclick="doResetPassword()"
+          style="margin-top:8px;font-size:13px">Forgot password?</button>
+        <div class="auth-divider"><span>Don't have a password yet?</span></div>
+        <button class="btn btn-ghost btn-full" onclick="switchAuthTab('reg',document.getElementById('tabBtnReg'))"
+          style="font-size:13px">Go to Register →</button>
       </div>
 
-      <!-- REGISTER TAB -->
-      <div id="tab-register" class="tab-panel">
-        <div class="field"><label>Full Name</label><input type="text" id="pubName" placeholder="Your name"/></div>
-        <div class="field"><label>Email</label><input type="email" id="pubEmail" placeholder="you@example.com"/></div>
-        <div class="field"><label>Password</label><input type="password" id="pubPass" placeholder="Min 6 characters"/></div>
-        <div id="regMsgBox" style="display:none;border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:12px;line-height:1.7"></div>
-        <p class="auth-tip">New accounts are registered as <strong>User</strong>. A Super Admin can upgrade your role.</p>
+      <!-- ── REGISTER ────────────────────────────────────────────────────── -->
+      <div id="tab-reg" class="tab-panel">
+        <div class="auth-notice">
+          <strong>📋 First time? Register here.</strong><br/>
+          This works whether you are new <em>or</em> your account was already created in Firebase Console (it just needs a password set).
+        </div>
+        <div class="field">
+          <label>Full Name</label>
+          <input type="text" id="regName" placeholder="Allan Koay" autocomplete="name"/>
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="regEmail" placeholder="you@example.com" autocomplete="email"/>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="regPass" placeholder="Min 6 characters" autocomplete="new-password"/>
+        </div>
+        <div class="field">
+          <label>Confirm Password</label>
+          <input type="password" id="regPass2" placeholder="Repeat password" autocomplete="new-password"
+            onkeydown="if(event.key==='Enter')doRegisterPublic()"/>
+        </div>
+        <div id="regMsg" style="display:none"></div>
         <button class="btn btn-primary btn-full" id="btnReg" data-label="Create Account" onclick="doRegisterPublic()">Create Account</button>
+        <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.6">
+          New accounts start as <strong style="color:var(--text)">User</strong>. A Super Admin can change your role in User Management.
+        </p>
       </div>
     </div>
-  </div>
-</div>
 
 <!-- ═══ APP ══════════════════════════════════════════════════════════════════ -->
 <div id="appSection">
@@ -1669,10 +1747,15 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 <script>
 function switchAuthTab(name,btn){
-  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(t=>t.classList.remove('active'));
+  // Only toggle within the auth form
+  document.querySelectorAll('.auth-tabs .auth-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.auth-form .tab-panel').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
+  // Clear messages when switching tabs
+  ['loginMsg','regMsg'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='none';
+  });
 }
 function switchMTab(name,btn){
   btn.closest('.modal').querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
