@@ -42,33 +42,58 @@ window._state = {
 
 // ── AUTH LISTENER ─────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async fbUser => {
-  document.getElementById('appLoader').style.display = 'flex';
+  const loader  = document.getElementById('appLoader');
+  const authSec = document.getElementById('authSection');
+  const appSec  = document.getElementById('appSection');
+
+  function showAuthScreen(msg) {
+    loader.style.display  = 'none';
+    authSec.style.display = 'flex';
+    appSec.style.display  = 'none';
+    if (msg) showToast(msg, 'error');
+  }
+
   if (fbUser) {
-    const snap = await getDoc(doc(db, 'users', fbUser.uid));
-    if (!snap.exists()) {
-      await signOut(auth);
-      document.getElementById('appLoader').style.display = 'none';
-      document.getElementById('authSection').style.display = 'flex';
-      return;
+    loader.style.display  = 'flex';
+    authSec.style.display = 'none';
+    try {
+      const snap = await getDoc(doc(db, 'users', fbUser.uid));
+      if (!snap.exists()) {
+        // No user doc yet — could be first login after registration race condition
+        // Wait briefly and retry once
+        await new Promise(r => setTimeout(r, 1500));
+        const snap2 = await getDoc(doc(db, 'users', fbUser.uid));
+        if (!snap2.exists()) {
+          await signOut(auth);
+          showAuthScreen('Account setup incomplete. Please register again.');
+          return;
+        }
+        var d = snap2.data();
+      } else {
+        var d = snap.data();
+      }
+      if (d.status === 'suspended') {
+        await signOut(auth);
+        showAuthScreen('Your account has been suspended. Contact admin.');
+        return;
+      }
+      window._state.user = { uid: fbUser.uid, email: fbUser.email, ...d };
+      window._state.role = d.role || 'user';
+      startListeners();
+      showApp();
+    } catch(err) {
+      console.error('Auth/Firestore error:', err);
+      // Firestore rules likely not set up yet — show helpful message
+      if (err.code === 'permission-denied' || err.message?.includes('permission')) {
+        showAuthScreen('Firestore permissions error. Check your security rules in Firebase Console.');
+      } else {
+        showAuthScreen('Connection error. Check your Firebase config and internet connection.');
+      }
     }
-    const d = snap.data();
-    if (d.status === 'suspended') {
-      await signOut(auth);
-      document.getElementById('appLoader').style.display = 'none';
-      document.getElementById('authSection').style.display = 'flex';
-      showToast('Account suspended. Contact admin.', 'error');
-      return;
-    }
-    window._state.user = { uid: fbUser.uid, email: fbUser.email, ...d };
-    window._state.role = d.role;
-    startListeners();
-    showApp();
   } else {
     window._state.user = null; window._state.role = null;
     window._state.unsubs.forEach(u => u()); window._state.unsubs = [];
-    document.getElementById('appLoader').style.display = 'none';
-    document.getElementById('authSection').style.display = 'flex';
-    document.getElementById('appSection').style.display  = 'none';
+    showAuthScreen();
   }
 });
 
@@ -78,6 +103,12 @@ function startListeners() {
     const u = onSnapshot(q, snap => {
       window._state[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       cb();
+    }, err => {
+      console.warn('Firestore listener error for', key, err.code);
+      // Permission errors here mean Firestore rules need updating
+      if (err.code === 'permission-denied') {
+        showToast('Firestore rules error — update your security rules', 'error');
+      }
     });
     window._state.unsubs.push(u);
   };
@@ -93,8 +124,13 @@ window.doLogin = async () => {
   const email = fv('loginEmail'), pass = fv('loginPass');
   if (!email || !pass) return showToast('Enter email and password','error');
   setLoading('btnLogin', true, 'Signing in…');
-  try { await signInWithEmailAndPassword(auth, email, pass); }
-  catch(e) { showToast(friendlyErr(e.code), 'error'); setLoading('btnLogin', false, 'Sign In'); }
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+    // onAuthStateChanged will take over from here — don't reset loading
+  } catch(e) {
+    showToast(friendlyErr(e.code), 'error');
+    setLoading('btnLogin', false, 'Sign In');
+  }
 };
 window.doLogout = () => signOut(auth);
 
@@ -751,7 +787,7 @@ a{color:inherit;text-decoration:none}
 .spin{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 
 /* AUTH */
-#authSection{display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px;
+#authSection{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;
   background:radial-gradient(ellipse 55% 45% at 15% 25%,rgba(240,165,0,.13) 0%,transparent 65%),
              radial-gradient(ellipse 45% 40% at 85% 75%,rgba(224,92,42,.1) 0%,transparent 60%),var(--bg)}
 .auth-wrap{width:min(900px,100%);display:grid;grid-template-columns:1fr 1fr;border-radius:24px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border)}
