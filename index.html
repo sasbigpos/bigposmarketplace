@@ -11,7 +11,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, updatePassword, EmailAuthProvider, reauthenticateWithCredential
+  signOut, onAuthStateChanged, updatePassword, EmailAuthProvider,
+  reauthenticateWithCredential, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, collection, addDoc, updateDoc,
@@ -46,53 +47,70 @@ onAuthStateChanged(auth, async fbUser => {
   const authSec = document.getElementById('authSection');
   const appSec  = document.getElementById('appSection');
 
-  function showAuthScreen(msg) {
+  function showAuthScreen(msg, type) {
     loader.style.display  = 'none';
     authSec.style.display = 'flex';
     appSec.style.display  = 'none';
-    if (msg) showToast(msg, 'error');
+    if (msg) setTimeout(() => showToast(msg, type || 'error'), 100);
   }
 
   if (fbUser) {
     loader.style.display  = 'flex';
     authSec.style.display = 'none';
     try {
-      const snap = await getDoc(doc(db, 'users', fbUser.uid));
+      let snap = await getDoc(doc(db, 'users', fbUser.uid));
+
+      // ── User exists in Firebase Auth but has NO Firestore doc ──────────────
+      // This happens when: (a) account was created directly in Firebase Console,
+      // (b) Firestore write failed during registration, (c) doc was deleted.
+      // Solution: auto-create a user doc with sensible defaults.
       if (!snap.exists()) {
-        // No user doc yet — could be first login after registration race condition
-        // Wait briefly and retry once
-        await new Promise(r => setTimeout(r, 1500));
-        const snap2 = await getDoc(doc(db, 'users', fbUser.uid));
-        if (!snap2.exists()) {
-          await signOut(auth);
-          showAuthScreen('Account setup incomplete. Please register again.');
-          return;
-        }
-        var d = snap2.data();
-      } else {
-        var d = snap.data();
+        console.log('No Firestore user doc found — creating one automatically');
+        const defaultName = fbUser.displayName || fbUser.email.split('@')[0];
+        await setDoc(doc(db, 'users', fbUser.uid), {
+          name: defaultName,
+          email: fbUser.email,
+          role: 'user',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          photoURL: fbUser.photoURL || ''
+        });
+        // Re-fetch
+        snap = await getDoc(doc(db, 'users', fbUser.uid));
       }
+
+      const d = snap.data();
+
       if (d.status === 'suspended') {
         await signOut(auth);
-        showAuthScreen('Your account has been suspended. Contact admin.');
+        showAuthScreen('Your account has been suspended. Contact the administrator.');
         return;
       }
+
       window._state.user = { uid: fbUser.uid, email: fbUser.email, ...d };
       window._state.role = d.role || 'user';
       startListeners();
       showApp();
+
     } catch(err) {
-      console.error('Auth/Firestore error:', err);
-      // Firestore rules likely not set up yet — show helpful message
-      if (err.code === 'permission-denied' || err.message?.includes('permission')) {
-        showAuthScreen('Firestore permissions error. Check your security rules in Firebase Console.');
+      console.error('Auth/Firestore error:', err.code, err.message);
+      if (err.code === 'permission-denied') {
+        showAuthScreen(
+          'Firestore security rules are blocking access. ' +
+          'Go to Firebase Console → Firestore → Rules and update them.',
+          'error'
+        );
+      } else if (err.code === 'unavailable' || err.code === 'deadline-exceeded') {
+        showAuthScreen('Cannot reach Firebase. Check your internet connection.', 'error');
       } else {
-        showAuthScreen('Connection error. Check your Firebase config and internet connection.');
+        showAuthScreen('Sign-in error: ' + (err.message || err.code), 'error');
       }
     }
   } else {
-    window._state.user = null; window._state.role = null;
-    window._state.unsubs.forEach(u => u()); window._state.unsubs = [];
+    window._state.user = null;
+    window._state.role = null;
+    window._state.unsubs.forEach(u => u());
+    window._state.unsubs = [];
     showAuthScreen();
   }
 });
@@ -133,6 +151,17 @@ window.doLogin = async () => {
   }
 };
 window.doLogout = () => signOut(auth);
+
+window.doResetPassword = async () => {
+  const email = fv('loginEmail');
+  if (!email) return showToast('Enter your email address above first', 'error');
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showToast('Password reset email sent to ' + email + ' 📧', 'success');
+  } catch(e) {
+    showToast(friendlyErr(e.code), 'error');
+  }
+};
 
 window.doRegisterPublic = async () => {
   const name = fv('pubName'), email = fv('pubEmail'), pass = fv('pubPass');
@@ -1124,8 +1153,17 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
       </div>
       <div id="tab-login" class="tab-panel active">
         <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com" onkeydown="if(event.key==='Enter')doLogin()"/></div>
-        <div class="field"><label>Password</label><input type="password" id="loginPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div class="field">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+            <label style="margin:0">Password</label>
+            <button type="button" onclick="doResetPassword()" style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:var(--body);padding:0">Forgot password?</button>
+          </div>
+          <input type="password" id="loginPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+        </div>
         <button class="btn btn-primary btn-full" id="btnLogin" data-label="Sign In" onclick="doLogin()">Sign In</button>
+        <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.6">
+          Having trouble? Make sure your Firestore security rules are published in the Firebase Console.
+        </p>
       </div>
       <div id="tab-register" class="tab-panel">
         <div class="field"><label>Full Name</label><input type="text" id="pubName" placeholder="Your name"/></div>
