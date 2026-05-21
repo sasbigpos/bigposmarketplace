@@ -58,14 +58,11 @@ onAuthStateChanged(auth, async fbUser => {
     loader.style.display  = 'flex';
     authSec.style.display = 'none';
     try {
-      let snap = await getDoc(doc(db, 'users', fbUser.uid));
+      const snapFirst = await getDoc(doc(db, 'users', fbUser.uid));
 
-      // ── User exists in Firebase Auth but has NO Firestore doc ──────────────
-      // This happens when: (a) account was created directly in Firebase Console,
-      // (b) Firestore write failed during registration, (c) doc was deleted.
-      // Solution: auto-create a user doc with sensible defaults.
-      if (!snap.exists()) {
-        console.log('No Firestore user doc found — creating one automatically');
+      // If no Firestore doc exists, auto-create one with defaults
+      if (!snapFirst.exists()) {
+        console.log('No Firestore user doc — auto-creating');
         const defaultName = fbUser.displayName || fbUser.email.split('@')[0];
         await setDoc(doc(db, 'users', fbUser.uid), {
           name: defaultName,
@@ -75,11 +72,11 @@ onAuthStateChanged(auth, async fbUser => {
           createdAt: new Date().toISOString(),
           photoURL: fbUser.photoURL || ''
         });
-        // Re-fetch
-        snap = await getDoc(doc(db, 'users', fbUser.uid));
       }
 
-      const d = snap.data();
+      // Always fetch fresh copy (whether just created or pre-existing)
+      const snapFinal = await getDoc(doc(db, 'users', fbUser.uid));
+      const d = snapFinal.data();
 
       if (d.status === 'suspended') {
         await signOut(auth);
@@ -139,7 +136,7 @@ function startListeners() {
 
 // ── AUTH ACTIONS ──────────────────────────────────────────────────────────────
 // ── Auth helpers ─────────────────────────────────────────────────────────────
-function authMsg(tabId, msg, type, extra) {
+window.authMsg = function(tabId, msg, type, extra) {
   const el = document.getElementById(tabId + 'Msg');
   if (!el) { showToast(msg, type==='success'?'success':'error'); return; }
   el.style.display = 'block';
@@ -151,10 +148,12 @@ function authMsg(tabId, msg, type, extra) {
   el.innerHTML = '<strong>' + msg + '</strong>'
     + (extra ? '<br><span style="font-size:12px;opacity:.9;margin-top:5px;display:block">' + extra + '</span>' : '');
 }
-function clearAuthMsg(tabId) {
+window.clearAuthMsg = function(tabId) {
   const el = document.getElementById(tabId + 'Msg');
   if (el) el.style.display = 'none';
-}
+};
+const clearAuthMsg = window.clearAuthMsg;
+const authMsg = window.authMsg;
 
 // ── Sign In ───────────────────────────────────────────────────────────────────
 window.doLogin = async () => {
@@ -1310,14 +1309,14 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
           <input type="email" id="loginEmail" placeholder="you@example.com"
             autocomplete="email"
             onkeydown="if(event.key==='Enter')doLogin()"
-            oninput="clearAuthMsg('login')"/>
+            onfocus="window.clearAuthMsg&&clearAuthMsg('login')"/>
         </div>
         <div class="field">
           <label>Password</label>
           <input type="password" id="loginPass" placeholder="••••••••"
             autocomplete="current-password"
             onkeydown="if(event.key==='Enter')doLogin()"
-            oninput="clearAuthMsg('login')"/>
+            onfocus="window.clearAuthMsg&&clearAuthMsg('login')"/>
         </div>
         <div id="loginMsg" style="display:none"></div>
         <button class="btn btn-primary btn-full" id="btnLogin" data-label="Sign In" onclick="doLogin()">Sign In</button>
