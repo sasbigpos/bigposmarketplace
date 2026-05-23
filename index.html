@@ -8,9 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
 
 <!-- Firebase Compat SDK — plain scripts, no modules, no import/export -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
 <script>
 // ── FIREBASE INIT ────────────────────────────────────────────────────────────
@@ -291,9 +291,10 @@ function doRegisterPublic() {
       'auth/email-already-in-use':
         'This email is already registered. Use Sign In tab, or delete the account in Firebase Console first.',
       'auth/network-request-failed':
-        'Firebase is blocking this domain. Go to Firebase Console → Authentication → Settings → Authorized Domains → Add Domain → type: sasbigpos.github.io',
+        '⚠️ Most likely cause: Email/Password is DISABLED. '
+        + 'Go to Firebase Console → Authentication → Sign-in method → Email/Password → ENABLE → Save.',
       'auth/operation-not-allowed':
-        'Email/Password sign-in is not enabled. Go to Firebase Console → Authentication → Sign-in method → Enable Email/Password.',
+        'Email/Password is DISABLED. Go to Firebase Console → Authentication → Sign-in method → Email/Password → Enable → Save.',
       'auth/too-many-requests':
         'Too many attempts. Wait a few minutes and try again.',
       'auth/internal-error':
