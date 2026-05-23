@@ -26,6 +26,29 @@ firebase.initializeApp(firebaseConfig);
 var auth = firebase.auth();
 var db   = firebase.firestore();
 
+// ── CONNECTIVITY TEST ─────────────────────────────────────────────────────────
+// Runs once on page load to check Firebase Auth is reachable from this domain
+window.addEventListener('load', function() {
+  // Test by fetching Firebase Auth endpoint
+  fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyCew9BvXd1PgX3KKgAV6aLxvvxZFs9VbaU', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({returnSecureToken: false})
+  }).then(function(r) {
+    // Any response (even error) means we can reach Firebase
+    console.log('Firebase reachable, status:', r.status);
+    var bar = document.getElementById('connectBar');
+    if (bar) { bar.style.display='none'; }
+  }).catch(function(err) {
+    console.error('Firebase unreachable:', err);
+    var bar = document.getElementById('connectBar');
+    if (bar) {
+      bar.style.display = 'block';
+      bar.textContent = '⚠️ Cannot reach Firebase. Check your internet connection or try a different network.';
+    }
+  });
+});
+
 // ── STATE ────────────────────────────────────────────────────────────────────
 var _state = {
   user: null, role: null,
@@ -78,7 +101,7 @@ function friendlyErr(code) {
     'auth/too-many-requests':    'Too many attempts. Try again later.',
     'auth/user-disabled':        'This account has been disabled.',
     'auth/requires-recent-login':'Please sign out and sign back in first.',
-    'auth/network-request-failed': 'Network error. Check your connection.'
+    'auth/network-request-failed': 'Network / Domain error'
   };
   return map[code] || ('Error: ' + (code || 'unknown'));
 }
@@ -263,13 +286,21 @@ function doRegisterPublic() {
     // onAuthStateChanged fires and loads app
   }).catch(function(e) {
     setLoading('btnReg', false, 'Create Account');
+    console.error('Register error:', e.code, e.message);
     var hints = {
       'auth/email-already-in-use':
-        'This email is already registered. Go to Sign In tab. '
-        + 'If you created it in Firebase Console without a password, '
-        + 'delete it there first (Authentication → Users → Delete), then register here.'
+        'This email is already registered. Use Sign In tab, or delete the account in Firebase Console first.',
+      'auth/network-request-failed':
+        'Firebase is blocking this domain. Go to Firebase Console → Authentication → Settings → Authorized Domains → Add Domain → type: sasbigpos.github.io',
+      'auth/operation-not-allowed':
+        'Email/Password sign-in is not enabled. Go to Firebase Console → Authentication → Sign-in method → Enable Email/Password.',
+      'auth/too-many-requests':
+        'Too many attempts. Wait a few minutes and try again.',
+      'auth/internal-error':
+        'Firebase internal error. Check browser console for details.',
     };
-    authMsg('reg', friendlyErr(e.code), 'error', hints[e.code] || '');
+    var detail = hints[e.code] || ('Error code: ' + (e.code || 'unknown') + ' — ' + (e.message || ''));
+    authMsg('reg', friendlyErr(e.code), 'error', detail);
   });
 }
 
@@ -1225,6 +1256,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
       <p style="font-size:12px;color:var(--muted)">Powered by Firebase · BigPOS Marketplace</p>
     </div>
     <div class="auth-form">
+      <div id="connectBar" style="display:none;background:rgba(224,82,82,.15);border:1px solid rgba(224,82,82,.3);border-radius:10px;padding:12px 14px;font-size:13px;color:#e05252;margin-bottom:16px;line-height:1.6"></div>
       <div class="auth-tabs">
         <button class="auth-tab active" id="tabBtnLogin" onclick="switchAuthTab('login',this)">Sign In</button>
         <button class="auth-tab"        id="tabBtnReg"   onclick="switchAuthTab('reg',this)">Register</button>
