@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BigPOS Marketplace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
+
+<!-- Firebase Compat SDK — plain scripts, no modules, no import/export -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ── FIREBASE INIT ────────────────────────────────────────────────────────────
+var firebaseConfig = {
+  apiKey: "AIzaSyCew9BvXd1PgX3KKgAV6aLxvvxZFs9VbaU",
+  authDomain: "bigposmarketplace.firebaseapp.com",
+  projectId: "bigposmarketplace",
+  storageBucket: "bigposmarketplace.firebasestorage.app",
+  messagingSenderId: "346224146519",
+  appId: "1:346224146519:web:4322c47dc989f360790b12"
+};
+firebase.initializeApp(firebaseConfig);
+var auth = firebase.auth();
+var db   = firebase.firestore();
+
+// ── CONNECTIVITY TEST ─────────────────────────────────────────────────────────
+// Runs once on page load to check Firebase Auth is reachable from this domain
+window.addEventListener('load', function() {
+  // Test by fetching Firebase Auth endpoint
+  fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyCew9BvXd1PgX3KKgAV6aLxvvxZFs9VbaU', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({returnSecureToken: false})
+  }).then(function(r) {
+    // Any response (even error) means we can reach Firebase
+    console.log('Firebase reachable, status:', r.status);
+    var bar = document.getElementById('connectBar');
+    if (bar) { bar.style.display='none'; }
+  }).catch(function(err) {
+    console.error('Firebase unreachable:', err);
+    var bar = document.getElementById('connectBar');
+    if (bar) {
+      bar.style.display = 'block';
+      bar.textContent = '⚠️ Cannot reach Firebase. Check your internet connection or try a different network.';
+    }
+  });
+});
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+var _state = {
+  user: null, role: null,
+  products: [], users: [], banners: [], announcements: [],
+  vouchers: [], promotions: [],
+  activeCategory: 'all',
+  unsubs: []
+};
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function fv(id) { return (document.getElementById(id) && document.getElementById(id).value || '').trim(); }
+function setVal(id, v) { var e = document.getElementById(id); if (e) e.value = v || ''; }
+function setText(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
+function el(id) { return document.getElementById(id); }
+
+function showToast(msg, type) {
+  var t = document.createElement('div');
+  t.className = 'toast toast-' + (type || 'info');
+  t.textContent = msg;
+  el('toastArea').appendChild(t);
+  setTimeout(function(){ t.classList.add('show'); }, 10);
+  setTimeout(function(){ t.classList.remove('show'); setTimeout(function(){ t.remove(); }, 350); }, 3500);
+}
+
+function authMsg(tabId, msg, type, extra) {
+  var box = el(tabId + 'Msg');
+  if (!box) { showToast(msg, type === 'success' ? 'success' : 'error'); return; }
+  var isOk = type === 'success';
+  box.style.cssText = 'display:block;border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:10px;line-height:1.6;'
+    + (isOk
+      ? 'background:rgba(39,201,122,.12);border:1px solid rgba(39,201,122,.3);color:#27c97a;'
+      : 'background:rgba(224,82,82,.12);border:1px solid rgba(224,82,82,.3);color:#e05252;');
+  box.innerHTML = '<strong>' + msg + '</strong>'
+    + (extra ? '<br><span style="font-size:12px;opacity:.9;margin-top:5px;display:block">' + extra + '</span>' : '');
+}
+
+function clearAuthMsg(tabId) {
+  var box = el(tabId + 'Msg');
+  if (box) box.style.display = 'none';
+}
+
+function friendlyErr(code) {
+  var map = {
+    'auth/user-not-found':       'No account found for this email.',
+    'auth/wrong-password':       'Incorrect password.',
+    'auth/invalid-credential':   'Incorrect email or password.',
+    'auth/email-already-in-use': 'An account with this email already exists.',
+    'auth/weak-password':        'Password must be at least 6 characters.',
+    'auth/invalid-email':        'Invalid email address.',
+    'auth/too-many-requests':    'Too many attempts. Try again later.',
+    'auth/user-disabled':        'This account has been disabled.',
+    'auth/requires-recent-login':'Please sign out and sign back in first.',
+    'auth/network-request-failed': 'Network / Domain error'
+  };
+  return map[code] || ('Error: ' + (code || 'unknown'));
+}
+
+function setLoading(id, on, label) {
+  var btn = el(id);
+  if (!btn) return;
+  btn.disabled = on;
+  btn.textContent = on ? label : (btn.dataset.label || btn.textContent);
+}
+
+function openModal(id)  { var m = el(id); if (m) m.classList.add('open'); }
+function closeModal(id) { var m = el(id); if (m) m.classList.remove('open'); }
+function handleOC(e, id) { if (e.target === e.currentTarget) closeModal(id); }
+function openSidebar()  { el('sidebar').classList.add('mob-open');    el('sbarOvl').classList.add('open'); }
+function closeSidebar() { el('sidebar').classList.remove('mob-open'); el('sbarOvl').classList.remove('open'); }
+
+function switchAuthTab(name, btn) {
+  document.querySelectorAll('.auth-tabs .auth-tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.auth-form .tab-panel').forEach(function(t){ t.classList.remove('active'); });
+  btn.classList.add('active');
+  el('tab-' + name).classList.add('active');
+  ['loginMsg','regMsg'].forEach(function(id){ var b = el(id); if (b) b.style.display = 'none'; });
+}
+
+function switchMTab(name, btn) {
+  btn.closest('.modal').querySelectorAll('.modal-tab').forEach(function(t){ t.classList.remove('active'); });
+  btn.closest('.modal').querySelectorAll('.tab-panel').forEach(function(t){ t.classList.remove('active'); });
+  btn.classList.add('active');
+  el('tab-' + name).classList.add('active');
+}
+
+function formatDate(str) {
+  if (!str) return '';
+  try { return new Date(str).toLocaleDateString('en-MY', {day:'2-digit',month:'short',year:'numeric'}); } catch(e) { return str; }
+}
+
+function collectPF(px) {
+  return {
+    title: fv(px+'Title'), desc: fv(px+'Desc'),
+    price: parseFloat(fv(px+'Price')) || 0,
+    cat: fv(px+'Cat'), img: fv(px+'Img'), img2: fv(px+'Img2'), img3: fv(px+'Img3'),
+    link: fv(px+'Link'), stock: fv(px+'Stock'), sku: fv(px+'Sku'), badge: fv(px+'Badge')
+  };
+}
+function clearPF(px) {
+  ['Title','Desc','Price','Cat','Img','Img2','Img3','Link','Stock','Sku','Badge'].forEach(function(f){ setVal(px+f,''); });
+}
+function setPF(px, p) {
+  setVal(px+'Title',p.title); setVal(px+'Desc',p.desc);   setVal(px+'Price',p.price);
+  setVal(px+'Cat',p.cat);     setVal(px+'Img',p.img);     setVal(px+'Img2',p.img2);
+  setVal(px+'Img3',p.img3);   setVal(px+'Link',p.link);   setVal(px+'Stock',p.stock);
+  setVal(px+'Sku',p.sku);     setVal(px+'Badge',p.badge);
+}
+
+// ── AUTH LISTENER ────────────────────────────────────────────────────────────
+auth.onAuthStateChanged(function(fbUser) {
+  el('appLoader').style.display = 'flex';
+  if (fbUser) {
+    el('authSection').style.display = 'none';
+    db.collection('users').doc(fbUser.uid).get().then(function(snap) {
+      if (!snap.exists) {
+        // Auto-create user doc
+        var name = fbUser.displayName || fbUser.email.split('@')[0];
+        return db.collection('users').doc(fbUser.uid).set({
+          name: name, email: fbUser.email, role: 'user',
+          status: 'active', createdAt: new Date().toISOString(), photoURL: ''
+        }).then(function() {
+          return db.collection('users').doc(fbUser.uid).get();
+        });
+      }
+      return snap;
+    }).then(function(snap) {
+      var d = snap.data();
+      if (d.status === 'suspended') {
+        auth.signOut();
+        el('appLoader').style.display = 'none';
+        el('authSection').style.display = 'flex';
+        showToast('Account suspended. Contact admin.', 'error');
+        return;
+      }
+      _state.user = Object.assign({ uid: fbUser.uid, email: fbUser.email }, d);
+      _state.role = d.role || 'user';
+      startListeners();
+      showApp();
+    }).catch(function(err) {
+      console.error('Firestore error:', err.code, err.message);
+      el('appLoader').style.display = 'none';
+      el('authSection').style.display = 'flex';
+      if (err.code === 'permission-denied') {
+        showToast('Firestore rules error — update security rules in Firebase Console', 'error');
+      } else {
+        showToast('Error: ' + err.message, 'error');
+      }
+    });
+  } else {
+    _state.user = null; _state.role = null;
+    _state.unsubs.forEach(function(u){ u(); }); _state.unsubs = [];
+    el('appLoader').style.display = 'none';
+    el('authSection').style.display = 'flex';
+    el('appSection').style.display  = 'none';
+  }
+});
+
+// ── LISTENERS ────────────────────────────────────────────────────────────────
+function startListeners() {
+  function sub(ref, key, cb) {
+    var u = ref.onSnapshot(function(snap) {
+      _state[key] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      cb();
+    }, function(err){ console.warn('Listener error', key, err.code); });
+    _state.unsubs.push(u);
+  }
+  sub(db.collection('products').orderBy('createdAt','desc'),      'products',      function(){ renderShop(); renderManageList(); updateStats(); });
+  sub(db.collection('banners').orderBy('createdAt','desc'),       'banners',       function(){ renderBannerCarousel(); renderBannersAdmin(); });
+  sub(db.collection('announcements').orderBy('createdAt','desc'), 'announcements', function(){ renderAnnouncementBar(); renderAnnouncementsAdmin(); });
+  sub(db.collection('vouchers').orderBy('createdAt','desc'),      'vouchers',      function(){ renderVouchers(); renderVouchersAdmin(); });
+  sub(db.collection('promotions').orderBy('createdAt','desc'),    'promotions',    function(){ renderPromotions(); renderPromotionsAdmin(); });
+}
+
+// ── AUTH ACTIONS ─────────────────────────────────────────────────────────────
+function doLogin() {
+  var email = fv('loginEmail'), pass = fv('loginPass');
+  clearAuthMsg('login');
+  if (!email) return authMsg('login', 'Enter your email address.', 'error');
+  if (!pass)  return authMsg('login', 'Enter your password.', 'error');
+  setLoading('btnLogin', true, 'Signing in\u2026');
+  auth.signInWithEmailAndPassword(email, pass).catch(function(e) {
+    setLoading('btnLogin', false, 'Sign In');
+    var hints = {
+      'auth/user-not-found':     'No account found. Use the Register tab to create one.',
+      'auth/wrong-password':     'Wrong password. Use Forgot password? to reset it.',
+      'auth/invalid-credential': 'Email or password incorrect. If you have not set a password yet, use the Register tab.',
+      'auth/too-many-requests':  'Too many attempts — wait a few minutes or reset password.',
+    };
+    authMsg('login', friendlyErr(e.code), 'error', hints[e.code] || '');
+  });
+}
+
+function doResetPassword() {
+  var email = fv('loginEmail');
+  clearAuthMsg('login');
+  if (!email) { authMsg('login', 'Enter your email above first.', 'error'); el('loginEmail').focus(); return; }
+  setLoading('btnForgot', true, 'Sending\u2026');
+  auth.sendPasswordResetEmail(email).then(function() {
+    authMsg('login', '📧 Reset email sent to ' + email, 'success',
+      'Check your inbox and spam folder. Click the link then come back and sign in.');
+  }).catch(function(e) {
+    var hints = {
+      'auth/user-not-found': 'No Firebase account for this email. Use the Register tab to create an account with this email.',
+    };
+    authMsg('login', friendlyErr(e.code), 'error', hints[e.code] || '');
+  }).finally(function() {
+    setLoading('btnForgot', false, 'Forgot password?');
+  });
+}
+
+function doRegisterPublic() {
+  var name  = fv('regName'), email = fv('regEmail');
+  var pass  = fv('regPass'), pass2 = fv('regPass2');
+  clearAuthMsg('reg');
+  if (!name)  return authMsg('reg', 'Enter your full name.', 'error');
+  if (!email) return authMsg('reg', 'Enter your email.', 'error');
+  if (!pass)  return authMsg('reg', 'Enter a password.', 'error');
+  if (pass.length < 6) return authMsg('reg', 'Password must be at least 6 characters.', 'error');
+  if (pass !== pass2)  return authMsg('reg', 'Passwords do not match.', 'error');
+  setLoading('btnReg', true, 'Creating\u2026');
+  auth.createUserWithEmailAndPassword(email, pass).then(function(cred) {
+    return db.collection('users').doc(cred.user.uid).get().then(function(snap) {
+      if (!snap.exists) {
+        return db.collection('users').doc(cred.user.uid).set({
+          name: name, email: email, role: 'user',
+          status: 'active', createdAt: new Date().toISOString(), photoURL: ''
+        });
+      } else {
+        var d = snap.data();
+        if (!d.name || d.name === email.split('@')[0]) {
+          return db.collection('users').doc(cred.user.uid).update({ name: name });
+        }
+      }
+    });
+    // onAuthStateChanged fires and loads app
+  }).catch(function(e) {
+    setLoading('btnReg', false, 'Create Account');
+    console.error('Register error:', e.code, e.message);
+    var hints = {
+      'auth/email-already-in-use':
+        'This email is already registered. Use Sign In tab, or delete the account in Firebase Console first.',
+      'auth/network-request-failed':
+        '⚠️ Most likely cause: Email/Password is DISABLED. '
+        + 'Go to Firebase Console → Authentication → Sign-in method → Email/Password → ENABLE → Save.',
+      'auth/operation-not-allowed':
+        'Email/Password is DISABLED. Go to Firebase Console → Authentication → Sign-in method → Email/Password → Enable → Save.',
+      'auth/too-many-requests':
+        'Too many attempts. Wait a few minutes and try again.',
+      'auth/internal-error':
+        'Firebase internal error. Check browser console for details.',
+    };
+    var detail = hints[e.code] || ('Error code: ' + (e.code || 'unknown') + ' — ' + (e.message || ''));
+    authMsg('reg', friendlyErr(e.code), 'error', detail);
+  });
+}
+
+function doLogout() { auth.signOut(); }
+
+function doCreateUser() {
+  var name = fv('nuName'), email = fv('nuEmail'), pass = fv('nuPass'), role = fv('nuRole');
+  if (!name||!email||!pass) return showToast('Fill all fields', 'error');
+  auth.createUserWithEmailAndPassword(email, pass).then(function(c) {
+    return db.collection('users').doc(c.user.uid).set({
+      name:name, email:email, role:role, status:'active',
+      createdAt: new Date().toISOString(), photoURL:''
+    });
+  }).then(function() {
+    showToast('User "'+name+'" created ✅', 'success');
+    closeModal('addUserModal'); setVal('nuName',''); setVal('nuEmail',''); setVal('nuPass','');
+    loadUsers();
+  }).catch(function(e){ showToast(friendlyErr(e.code), 'error'); });
+}
+
+function doUpdateProfile() {
+  var name = fv('profName'), photoURL = fv('profPhoto');
+  db.collection('users').doc(_state.user.uid).update({name:name, photoURL:photoURL}).then(function() {
+    _state.user.name = name; _state.user.photoURL = photoURL;
+    renderSidebarUser(); showToast('Profile updated ✅','success'); closeModal('profileModal');
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+
+function doChangePassword() {
+  var curr = fv('currPass'), next = fv('newPass');
+  if (!curr||!next) return showToast('Fill both fields','error');
+  if (next.length < 6) return showToast('New password min 6 chars','error');
+  var cred = firebase.auth.EmailAuthProvider.credential(_state.user.email, curr);
+  auth.currentUser.reauthenticateWithCredential(cred).then(function() {
+    return auth.currentUser.updatePassword(next);
+  }).then(function() {
+    showToast('Password changed ✅','success'); closeModal('profileModal');
+    setVal('currPass',''); setVal('newPass','');
+  }).catch(function(e){ showToast(friendlyErr(e.code),'error'); });
+}
+
+// ── PRODUCT ACTIONS ───────────────────────────────────────────────────────────
+function doAddProduct() {
+  var d = collectPF('p');
+  if (!d.title) return showToast('Title required','error');
+  d.createdBy = _state.user.uid; d.createdAt = new Date().toISOString(); d.featured = false;
+  db.collection('products').add(d).then(function(){
+    showToast('Product added!','success'); closeModal('productModal'); clearPF('p');
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+
+function doSaveEdit(id) {
+  var d = collectPF('ep');
+  if (!d.title) return showToast('Title required','error');
+  d.updatedAt = new Date().toISOString();
+  db.collection('products').doc(id).update(d).then(function(){
+    showToast('Updated ✏️','success'); closeModal('editProductModal');
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+
+function doDeleteProduct(id) {
+  if (!confirm('Delete this product?')) return;
+  db.collection('products').doc(id).delete().then(function(){ showToast('Deleted','success'); })
+    .catch(function(e){ showToast(e.message,'error'); });
+}
+
+function doToggleFeatured(id, cur) {
+  db.collection('products').doc(id).update({featured: !cur}).then(function(){
+    showToast(!cur ? 'Marked as Featured ⭐' : 'Removed from Featured','success');
+  });
+}
+
+function doEditProduct(id) {
+  var p = _state.products.filter(function(x){ return x.id===id; })[0];
+  if (!p) return;
+  setPF('ep', p);
+  el('editProductModal').dataset.pid = id;
+  openModal('editProductModal');
+}
+
+// ── BANNER ACTIONS ────────────────────────────────────────────────────────────
+function doAddBanner() {
+  var title=fv('banTitle'), img=fv('banImg'), link=fv('banLink'), sub=fv('banSub');
+  if (!title||!img) return showToast('Title and image URL required','error');
+  db.collection('banners').add({title:title, subtitle:sub, img:img, link:link, active:true,
+    createdBy:_state.user.uid, createdAt:new Date().toISOString()
+  }).then(function(){
+    showToast('Banner added!','success'); closeModal('bannerModal');
+    ['banTitle','banSub','banImg','banLink'].forEach(function(id){ setVal(id,''); });
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+function doDeleteBanner(id) {
+  if (!confirm('Delete banner?')) return;
+  db.collection('banners').doc(id).delete().then(function(){ showToast('Deleted','success'); });
+}
+function doToggleBanner(id, cur) {
+  db.collection('banners').doc(id).update({active: !cur});
+}
+
+// ── ANNOUNCEMENT ACTIONS ──────────────────────────────────────────────────────
+function doAddAnnouncement() {
+  var text=fv('annText'), type=fv('annType');
+  if (!text) return showToast('Message required','error');
+  db.collection('announcements').add({text:text, type:type, active:true,
+    createdBy:_state.user.uid, createdAt:new Date().toISOString()
+  }).then(function(){
+    showToast('Announcement posted!','success'); closeModal('annModal'); setVal('annText','');
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+function doDeleteAnnouncement(id) {
+  db.collection('announcements').doc(id).delete().then(function(){ showToast('Removed','success'); });
+}
+function doToggleAnnouncement(id, cur) {
+  db.collection('announcements').doc(id).update({active: !cur});
+}
+
+// ── VOUCHER ACTIONS ───────────────────────────────────────────────────────────
+function doAddVoucher() {
+  var code=fv('vCode'), disc=fv('vDiscount'), type=fv('vType'),
+      desc=fv('vDesc'), exp=fv('vExpiry'), min=fv('vMinOrder');
+  if (!code||!disc) return showToast('Code and discount required','error');
+  db.collection('vouchers').add({
+    code:code.toUpperCase(), discount:parseFloat(disc)||0, type:type,
+    desc:desc, expiry:exp, minOrder:parseFloat(min)||0,
+    active:true, createdBy:_state.user.uid, createdAt:new Date().toISOString()
+  }).then(function(){
+    showToast('Voucher added!','success'); closeModal('voucherModal');
+    ['vCode','vDesc','vDiscount','vExpiry','vMinOrder'].forEach(function(id){ setVal(id,''); });
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+function doDeleteVoucher(id) {
+  if (!confirm('Delete voucher?')) return;
+  db.collection('vouchers').doc(id).delete().then(function(){ showToast('Deleted','success'); });
+}
+function doToggleVoucher(id, cur) { db.collection('vouchers').doc(id).update({active:!cur}); }
+
+// ── PROMOTION ACTIONS ─────────────────────────────────────────────────────────
+function doAddPromotion() {
+  var title=fv('promoTitle');
+  if (!title) return showToast('Title required','error');
+  db.collection('promotions').add({
+    title:title, desc:fv('promoDesc'), img:fv('promoImg'), link:fv('promoLink'),
+    badge:fv('promoBadge'), startDate:fv('promoStart'), endDate:fv('promoEnd'),
+    active:true, createdBy:_state.user.uid, createdAt:new Date().toISOString()
+  }).then(function(){
+    showToast('Promotion added!','success'); closeModal('promoModal');
+    ['promoTitle','promoDesc','promoImg','promoLink','promoBadge','promoStart','promoEnd'].forEach(function(id){ setVal(id,''); });
+  }).catch(function(e){ showToast(e.message,'error'); });
+}
+function doDeletePromotion(id) {
+  if (!confirm('Delete promotion?')) return;
+  db.collection('promotions').doc(id).delete().then(function(){ showToast('Deleted','success'); });
+}
+function doTogglePromotion(id, cur) { db.collection('promotions').doc(id).update({active:!cur}); }
+
+// ── USER MANAGEMENT ───────────────────────────────────────────────────────────
+function loadUsers() {
+  db.collection('users').get().then(function(snap) {
+    _state.users = snap.docs.map(function(d){ return Object.assign({uid:d.id}, d.data()); });
+    renderUsersTable(); updateStats();
+  });
+}
+function doUpdateUserRole(uid, role) {
+  db.collection('users').doc(uid).update({role:role}).then(function(){ showToast('Role updated ✅','success'); });
+}
+function doUpdateUserStatus(uid, status) {
+  db.collection('users').doc(uid).update({status:status}).then(function(){
+    showToast(status==='active'?'Activated ✅':'Suspended ⛔', status==='active'?'success':'error');
+    loadUsers();
+  });
+}
+function openProfileModal() {
+  setVal('profName',  _state.user && _state.user.name    || '');
+  setVal('profPhoto', _state.user && _state.user.photoURL || '');
+  openModal('profileModal');
+}
+
+// ── RENDER: SHOP ──────────────────────────────────────────────────────────────
+function renderShop() {
+  var products = _state.products, role = _state.role;
+  var q = (el('searchInput') && el('searchInput').value || '').toLowerCase();
+  var canEdit = role==='admin' || role==='super_admin';
+  var cats = ['all'];
+  products.forEach(function(p){ if (p.cat && cats.indexOf(p.cat)===-1) cats.push(p.cat); });
+  var catBar = el('catBar');
+  if (catBar) catBar.innerHTML = cats.map(function(c){
+    return '<button class="cat-btn'+((_state.activeCategory===c)?' active':'')+'" onclick="setCategory(\''+c+'\')">'+(c==='all'?'🛍️ All':c)+'</button>';
+  }).join('');
+  var list = _state.activeCategory==='all' ? products : products.filter(function(p){ return p.cat===_state.activeCategory; });
+  if (q) list = list.filter(function(p){ return ((p.title||'')+(p.desc||'')+(p.cat||'')).toLowerCase().indexOf(q)>-1; });
+  var countEl = el('productCount');
+  if (countEl) countEl.textContent = list.length + ' item' + (list.length!==1?'s':'');
+  var featured = list.filter(function(p){ return p.featured; });
+  var fs = el('featuredStrip');
+  if (fs) {
+    if (featured.length) {
+      fs.style.display = '';
+      el('featuredRow').innerHTML = featured.map(function(p){ return pCard(p, canEdit, true); }).join('');
+    } else fs.style.display = 'none';
+  }
+  var grid = el('productGrid');
+  if (!grid) return;
+  grid.innerHTML = list.length ? list.map(function(p){ return pCard(p, canEdit, false); }).join('')
+    : '<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found.</p></div>';
+}
+
+function pCard(p, canEdit, compact) {
+  var link = p.link || '';
+  var oCls = 'btn-addcart' + (link ? '' : ' btn-addcart-disabled');
+  var stockHtml = '';
+  if (p.stock !== undefined && p.stock !== '') {
+    var inStock = parseInt(p.stock) > 0;
+    stockHtml = '<span class="stock-tag '+(inStock?'in':'out')+'">'+(inStock?'In Stock':'Out')+'</span>';
+  }
+  var badgeHtml = p.badge ? '<span class="badge">'+p.badge+'</span>'
+    : p.featured ? '<span class="badge badge-gold">⭐</span>'
+    : p.cat ? '<span class="badge">'+p.cat+'</span>' : '';
+  return '<div class="pcard'+(compact?' compact':'')+'" onclick="openProduct(\''+p.id+'\')">'
+    +'<div class="pcard-img">'
+    +(p.img ? '<img src="'+p.img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"/>' : '<span>🖼️</span>')
+    +badgeHtml+'</div>'
+    +'<div class="pcard-body">'
+    +'<h3 class="pcard-title">'+p.title+'</h3>'
+    +(!compact && p.desc ? '<p class="pcard-desc">'+p.desc+'</p>' : '')
+    +'<div class="pcard-footer"><span class="pcard-price">RM '+parseFloat(p.price||0).toFixed(2)+'</span>'+stockHtml+'</div>'
+    +'<button class="'+oCls+'" data-link="'+link+'" onclick="event.stopPropagation();handleOrderNow(this)">🔗 Order Now</button>'
+    +'</div></div>';
+}
+
+function setCategory(cat) { _state.activeCategory = cat; renderShop(); }
+function filterProducts() { renderShop(); }
+
+// ── RENDER: PRODUCT DETAIL ────────────────────────────────────────────────────
+function openProduct(id) {
+  var p = _state.products.filter(function(x){ return x.id===id; })[0];
+  if (!p) return;
+  var canEdit = _state.role==='admin' || _state.role==='super_admin';
+  var imgs = [p.img, p.img2, p.img3].filter(Boolean);
+  var link = p.link || '';
+  var imgsHtml = '';
+  if (imgs.length) {
+    imgsHtml = '<div class="pd-main-img"><img id="pdMainImg" src="'+imgs[0]+'" alt=""/></div>';
+    if (imgs.length>1) {
+      imgsHtml += '<div class="pd-thumbs">';
+      imgs.forEach(function(u){ imgsHtml += '<img src="'+u+'" onclick="el(\'pdMainImg\').src=\''+u+'\'" onerror="this.style.display=\'none\'"/>'; });
+      imgsHtml += '</div>';
+    }
+  } else { imgsHtml = '<div class="pd-main-img" style="display:flex;align-items:center;justify-content:center;font-size:72px">🖼️</div>'; }
+  var pills = (p.badge ? '<span class="pill pill-hot">'+p.badge+'</span>' : '')
+    + (p.featured ? '<span class="pill pill-gold">⭐ Featured</span>' : '')
+    + (p.cat ? '<span class="pill pill-cat">'+p.cat+'</span>' : '');
+  var stockHtml = '';
+  if (p.stock !== undefined && p.stock !== '') {
+    var inStock = parseInt(p.stock)>0;
+    stockHtml = '<p class="pd-stock '+(inStock?'in':'out')+'">'+(inStock?'✅ In Stock ('+p.stock+' units)':'❌ Out of Stock')+'</p>';
+  }
+  var adminHtml = canEdit ? '<div class="pd-admin">'
+    +'<button class="btn-sm btn-edit" onclick="closePD();doEditProduct(\''+id+'\')">✏️ Edit</button>'
+    +'<button class="btn-sm btn-edit" onclick="doToggleFeatured(\''+id+'\','+!!p.featured+')">'+(p.featured?'Unfeature':'⭐ Feature')+'</button>'
+    +'<button class="btn-sm btn-del" onclick="closePD();doDeleteProduct(\''+id+'\')">🗑️ Delete</button>'
+    +'</div>' : '';
+  var orderBtn = '<button class="btn btn-primary" style="flex:1" data-link="'+link+'" onclick="handleOrderNow(this);closePD()">🔗 Order Now</button>';
+  var visitBtn = link ? '<a class="btn btn-ghost" href="'+link+'" target="_blank">🌐 Visit</a>' : '';
+  el('pdModal').innerHTML = '<div class="pd-box" onclick="event.stopPropagation()">'
+    +'<button class="pd-close" onclick="closePD()">✕</button>'
+    +'<div class="pd-left">'+imgsHtml+'</div>'
+    +'<div class="pd-right">'
+    +'<div class="pd-pills">'+pills+'</div>'
+    +'<h2 class="pd-title">'+p.title+'</h2>'
+    +(p.sku?'<p class="pd-sku">SKU: '+p.sku+'</p>':'')
+    +'<div class="pd-price">RM '+parseFloat(p.price||0).toFixed(2)+'</div>'
+    +stockHtml+(p.desc?'<p class="pd-desc">'+p.desc+'</p>':'')
+    +'<div class="pd-actions">'+orderBtn+visitBtn+'</div>'
+    +adminHtml+'</div></div>';
+  el('pdModal').classList.add('open');
+}
+function closePD() { el('pdModal').classList.remove('open'); }
+
+// ── RENDER: BANNERS ───────────────────────────────────────────────────────────
+function renderBannerCarousel() {
+  var active = _state.banners.filter(function(b){ return b.active; });
+  var carousel = el('bannerCarousel');
+  if (!carousel) return;
+  if (!active.length) { carousel.style.display = 'none'; return; }
+  carousel.style.display = '';
+  var slidesHtml = '';
+  active.forEach(function(b, i) {
+    var showCls = i===0 ? ' show' : '';
+    var clickAttr = b.link ? ' onclick="openBrowser(\''+b.link+'\')" style="cursor:pointer"' : '';
+    slidesHtml += '<div class="c-slide'+showCls+'"'+clickAttr+'>'
+      +'<img src="'+b.img+'" alt="" onerror="this.style.display=\'none\'"/>'
+      +'<div class="c-cap"><h2>'+b.title+'</h2>'+(b.subtitle?'<p>'+b.subtitle+'</p>':'')+'</div></div>';
+  });
+  var ctrlHtml = '';
+  if (active.length > 1) {
+    var dots = active.map(function(_,i){ return '<span class="cdot'+(i===0?' on':'')+'" onclick="cGo('+i+')"></span>'; }).join('');
+    ctrlHtml = '<button class="c-btn c-prev" onclick="cMove(-1)">&#8249;</button>'
+      +'<button class="c-btn c-next" onclick="cMove(1)">&#8250;</button>'
+      +'<div class="c-dots">'+dots+'</div>';
+  }
+  carousel.innerHTML = '<div class="c-track">'+slidesHtml+'</div>'+ctrlHtml;
+  if (active.length > 1) cStart();
+}
+
+var _ci=0, _ct=null;
+function cStart() { if (_ct) clearInterval(_ct); _ci=0; _ct=setInterval(function(){ cMove(1); }, 4800); }
+function cMove(dir) {
+  var slides=document.querySelectorAll('.c-slide'), dots=document.querySelectorAll('.cdot');
+  if (!slides.length) return;
+  slides[_ci].classList.remove('show'); if(dots[_ci]) dots[_ci].classList.remove('on');
+  _ci = (_ci+dir+slides.length) % slides.length;
+  slides[_ci].classList.add('show'); if(dots[_ci]) dots[_ci].classList.add('on');
+}
+function cGo(i) { if (i!==_ci) cMove(i>_ci?1:-1); }
+
+// ── RENDER: ANNOUNCEMENT BAR ──────────────────────────────────────────────────
+function renderAnnouncementBar() {
+  var bar = el('annBar'); if (!bar) return;
+  var active = _state.announcements.filter(function(a){ return a.active; });
+  if (!active.length) { bar.style.display='none'; return; }
+  bar.style.display=''; var a=active[0];
+  bar.className = 'ann-bar ann-'+(a.type||'info');
+  var icons = {info:'ℹ️',success:'✅',warning:'⚠️',error:'🚨'};
+  bar.innerHTML = '<span>'+(icons[a.type]||'📢')+'</span><span>'+a.text+'</span><button onclick="this.parentElement.style.display=\'none\'">✕</button>';
+}
+
+// ── RENDER: ADMIN MEDIA ───────────────────────────────────────────────────────
+function renderBannersAdmin() {
+  var e=el('bannersAdmin'); if (!e) return;
+  var banners=_state.banners;
+  if (!banners.length) { e.innerHTML='<p class="empty-msg">No banners yet.</p>'; return; }
+  e.innerHTML = banners.map(function(b) {
+    return '<div class="media-row">'
+      +'<div class="media-thumb">'+(b.img?'<img src="'+b.img+'" onerror="this.parentElement.innerHTML=\'🖼️\'"/>':'🖼️')+'</div>'
+      +'<div class="media-info"><strong>'+b.title+'</strong>'+(b.subtitle?'<span>'+b.subtitle+'</span>':'')+(b.link?'<a href="'+b.link+'" target="_blank">🔗 '+b.link+'</a>':'')+'</div>'
+      +'<div class="media-acts"><label class="tog"><input type="checkbox" '+(b.active?'checked':'')+' onchange="doToggleBanner(\''+b.id+'\','+b.active+')"/><span></span></label>'
+      +'<button class="btn-sm btn-del" onclick="doDeleteBanner(\''+b.id+'\')">🗑️</button></div>'
+      +'</div>';
+  }).join('');
+}
+
+function renderAnnouncementsAdmin() {
+  var e=el('annsAdmin'); if (!e) return;
+  var anns=_state.announcements;
+  if (!anns.length) { e.innerHTML='<p class="empty-msg">No announcements yet.</p>'; return; }
+  e.innerHTML = anns.map(function(a) {
+    return '<div class="ann-row ann-'+(a.type||'info')+'">'
+      +'<span class="ann-type-tag">'+(a.type||'info')+'</span>'
+      +'<span class="ann-row-text">'+a.text+'</span>'
+      +'<label class="tog"><input type="checkbox" '+(a.active?'checked':'')+' onchange="doToggleAnnouncement(\''+a.id+'\','+a.active+')"/><span></span></label>'
+      +'<button class="btn-sm btn-del" onclick="doDeleteAnnouncement(\''+a.id+'\')">🗑️</button>'
+      +'</div>';
+  }).join('');
+}
+
+// ── RENDER: VOUCHERS ──────────────────────────────────────────────────────────
+function renderVouchers() {
+  var e=el('voucherList'); if (!e) return;
+  var active=_state.vouchers.filter(function(v){ return v.active; });
+  if (!active.length) { e.innerHTML='<div class="empty-state"><div class="empty-icon">🎟️</div><p>No vouchers available.</p></div>'; return; }
+  e.innerHTML = active.map(function(v) {
+    var exp = v.expiry && new Date(v.expiry) < new Date();
+    return '<div class="voucher-card'+(exp?' expired':'')+'">'
+      +'<div class="vc-left"><div class="vc-code">'+v.code+'</div>'
+      +'<div class="vc-desc">'+(v.desc||'Use at checkout')+'</div>'
+      +(v.minOrder?'<div class="vc-min">Min. order: RM '+parseFloat(v.minOrder).toFixed(2)+'</div>':'')
+      +(v.expiry?'<div class="vc-expiry '+(exp?'exp-red':'exp-ok')+'">'+(exp?'Expired':'Expires: ')+formatDate(v.expiry)+'</div>':'')
+      +'</div>'
+      +'<div class="vc-right"><div class="vc-discount">'+(v.type==='percent'?v.discount+'%':'RM '+parseFloat(v.discount||0).toFixed(2))+'</div>'
+      +'<div class="vc-off">OFF</div>'
+      +'<button class="vc-copy" onclick="copyVoucher(\''+v.code+'\')" '+(exp?'disabled':'')+'>Copy Code</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function renderVouchersAdmin() {
+  var e=el('vouchersAdmin'); if (!e) return;
+  var vs=_state.vouchers;
+  if (!vs.length) { e.innerHTML='<p class="empty-msg">No vouchers yet.</p>'; return; }
+  e.innerHTML = vs.map(function(v) {
+    return '<div class="media-row"><div class="vc-admin-code">'+v.code+'</div>'
+      +'<div class="media-info"><strong>'+(v.type==='percent'?v.discount+'% OFF':'RM '+parseFloat(v.discount||0).toFixed(2)+' OFF')+'</strong>'
+      +(v.desc?'<span>'+v.desc+'</span>':'')+(v.expiry?'<span>Expires: '+formatDate(v.expiry)+'</span>':'')+'</div>'
+      +'<div class="media-acts"><label class="tog"><input type="checkbox" '+(v.active?'checked':'')+' onchange="doToggleVoucher(\''+v.id+'\','+v.active+')"/><span></span></label>'
+      +'<button class="btn-sm btn-del" onclick="doDeleteVoucher(\''+v.id+'\')">🗑️</button></div>'
+      +'</div>';
+  }).join('');
+}
+
+function copyVoucher(code) {
+  navigator.clipboard && navigator.clipboard.writeText(code).then(function(){
+    showToast('Copied: '+code+' 🎟️','success');
+  }).catch(function(){ showToast('Code: '+code,'success'); });
+  if (!navigator.clipboard) showToast('Code: '+code,'success');
+}
+
+// ── RENDER: PROMOTIONS ────────────────────────────────────────────────────────
+function renderPromotions() {
+  var e=el('promoGrid'); if (!e) return;
+  var active=_state.promotions.filter(function(p){ return p.active; });
+  if (!active.length) { e.innerHTML='<div class="empty-state"><div class="empty-icon">🎉</div><p>No promotions right now.</p></div>'; return; }
+  e.innerHTML = active.map(function(p) {
+    var exp = p.endDate && new Date(p.endDate) < new Date();
+    var clickAttr = (p.link&&!exp) ? ' onclick="openBrowser(\''+p.link+'\')" style="cursor:pointer"' : '';
+    return '<div class="promo-card'+(exp?' expired':'')+'"'+clickAttr+'>'
+      +(p.img?'<div class="promo-img"><img src="'+p.img+'" alt="" onerror="this.style.display=\'none\'"/>'+(p.badge?'<span class="promo-badge">'+p.badge+'</span>':'')+'</div>':'')
+      +'<div class="promo-body"><h3 class="promo-title">'+p.title+'</h3>'
+      +(p.desc?'<p class="promo-desc">'+p.desc+'</p>':'')
+      +'<div class="promo-dates">'+(p.startDate?'<span>From: '+formatDate(p.startDate)+'</span>':'')
+      +(p.endDate?'<span>'+(exp?'<span class="exp-red">Ended</span>':'Until: '+formatDate(p.endDate))+'</span>':'')+'</div>'
+      +(p.link&&!exp?'<button class="btn btn-primary" style="width:100%;margin-top:10px" data-link="'+p.link+'" onclick="event.stopPropagation();handleOrderNow(this)">View Promotion →</button>':'')
+      +'</div></div>';
+  }).join('');
+}
+
+function renderPromotionsAdmin() {
+  var e=el('promosAdmin'); if (!e) return;
+  var ps=_state.promotions;
+  if (!ps.length) { e.innerHTML='<p class="empty-msg">No promotions yet.</p>'; return; }
+  e.innerHTML = ps.map(function(p) {
+    return '<div class="media-row"><div class="media-thumb">'+(p.img?'<img src="'+p.img+'" onerror="this.parentElement.innerHTML=\'🎉\'"/>':'🎉')+'</div>'
+      +'<div class="media-info"><strong>'+p.title+'</strong>'+(p.desc?'<span>'+p.desc+'</span>':'')+(p.endDate?'<span>Until: '+formatDate(p.endDate)+'</span>':'')+'</div>'
+      +'<div class="media-acts"><label class="tog"><input type="checkbox" '+(p.active?'checked':'')+' onchange="doTogglePromotion(\''+p.id+'\','+p.active+')"/><span></span></label>'
+      +'<button class="btn-sm btn-del" onclick="doDeletePromotion(\''+p.id+'\')">🗑️</button></div>'
+      +'</div>';
+  }).join('');
+}
+
+// ── RENDER: MANAGE LIST ───────────────────────────────────────────────────────
+function renderManageList() {
+  var e=el('manageList'); if (!e) return;
+  var ps=_state.products;
+  if (!ps.length) { e.innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><p>No products yet.</p></div>'; return; }
+  e.innerHTML = ps.map(function(p) {
+    return '<div class="mrow">'
+      +'<div class="mrow-thumb">'+(p.img?'<img src="'+p.img+'" onerror="this.parentElement.innerHTML=\'🖼️\'"/>':'🖼️')+'</div>'
+      +'<div class="mrow-info"><strong>'+p.title+'</strong>'
+      +'<span>RM '+parseFloat(p.price||0).toFixed(2)+(p.cat?' · '+p.cat:'')+(p.sku?' · '+p.sku:'')+(p.stock!==undefined&&p.stock!==''?' · Stock: '+p.stock:'')+'</span></div>'
+      +'<div class="mrow-acts">'
+      +'<button class="star-btn'+(p.featured?' on':'')+'" onclick="doToggleFeatured(\''+p.id+'\','+!!p.featured+')" title="Feature">⭐</button>'
+      +'<button class="btn-sm btn-edit" onclick="doEditProduct(\''+p.id+'\')">✏️ Edit</button>'
+      +'<button class="btn-sm btn-del" onclick="doDeleteProduct(\''+p.id+'\')">🗑️</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+// ── RENDER: USERS TABLE ───────────────────────────────────────────────────────
+function renderUsersTable() {
+  var tbody=el('usersTbody'); if (!tbody) return;
+  var users=_state.users, me=_state.user;
+  if (!users.length) { tbody.innerHTML='<tr><td colspan="6" class="td-empty">No users</td></tr>'; return; }
+  tbody.innerHTML = users.map(function(u) {
+    return '<tr class="'+(u.status==='suspended'?'row-susp':'')+'">'
+      +'<td><div class="ucell"><div class="av av-sm">'+(u.photoURL?'':((u.name||u.email)[0]||'?').toUpperCase())+'</div>'
+      +'<div><div style="font-weight:600;font-size:13px">'+u.name+'</div>'+(u.uid===me.uid?'<div style="font-size:10px;color:var(--accent)">YOU</div>':'')+'</div></div></td>'
+      +'<td class="td-muted">'+u.email+'</td>'
+      +'<td><select class="role-sel" onchange="doUpdateUserRole(\''+u.uid+'\',this.value)" '+(u.uid===me.uid?'disabled':'')+'>'
+      +['user','admin','super_admin'].map(function(r){ return '<option value="'+r+'" '+(u.role===r?'selected':'')+'>'+r.replace('_',' ')+'</option>'; }).join('')
+      +'</select></td>'
+      +'<td><span class="sdot '+(u.status==='active'?'sdot-on':'sdot-off')+'"></span>'+(u.status==='active'?'Active':'Suspended')+'</td>'
+      +'<td class="td-muted" style="font-size:12px">'+(u.createdAt||'').slice(0,10)+'</td>'
+      +'<td>'+(u.uid!==me.uid?'<button class="btn-sm '+(u.status==='active'?'btn-del':'btn-edit')+'" onclick="doUpdateUserStatus(\''+u.uid+'\',\''+(u.status==='active'?'suspended':'active')+'\')">'+(u.status==='active'?'Suspend':'Activate')+'</button>':'<span class="td-muted">—</span>')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── STATS ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  var ps=_state.products, us=_state.users;
+  setText('statProducts', ps.length);
+  setText('statFeatured',  ps.filter(function(p){ return p.featured; }).length);
+  var cats={}; ps.forEach(function(p){ if(p.cat) cats[p.cat]=1; });
+  setText('statCategories', Object.keys(cats).length);
+  setText('statUsers', us.length || '—');
+  renderCategoryChart();
+}
+
+function renderCategoryChart() {
+  var e=el('catChart'); if (!e) return;
+  var map={};
+  _state.products.forEach(function(p){ var c=p.cat||'Uncategorized'; map[c]=(map[c]||0)+1; });
+  var entries=Object.entries(map).sort(function(a,b){ return b[1]-a[1]; }).slice(0,8);
+  if (!entries.length) { e.innerHTML='<p class="empty-msg">No products yet</p>'; return; }
+  var max=Math.max.apply(null, entries.map(function(e){ return e[1]; }));
+  e.innerHTML = entries.map(function(pair){
+    return '<div class="bar-row"><span class="bar-lbl">'+pair[0]+'</span>'
+      +'<div class="bar-track"><div class="bar-fill" style="width:'+(pair[1]/max*100).toFixed(1)+'%"></div></div>'
+      +'<span class="bar-val">'+pair[1]+'</span></div>';
+  }).join('');
+}
+
+// ── SIDEBAR / APP ─────────────────────────────────────────────────────────────
+function renderSidebarUser() {
+  var u=_state.user, role=_state.role; if (!u) return;
+  setText('sbarName', u.name||u.email);
+  setText('sbarRole', (role||'').replace(/_/g,' '));
+  var av=el('sbarAv');
+  if (av) { av.style.background=''; av.textContent=(u.name||u.email)[0].toUpperCase(); }
+}
+
+function showApp() {
+  el('appLoader').style.display   = 'none';
+  el('authSection').style.display = 'none';
+  el('appSection').style.display  = 'flex';
+  var role=_state.role, isAdmin=(role==='admin'||role==='super_admin'), isSA=(role==='super_admin');
+  el('navManage').style.display    = isAdmin ? '' : 'none';
+  el('navMedia').style.display     = isAdmin ? '' : 'none';
+  el('navSuperAdmin').style.display = isSA   ? '' : 'none';
+  renderSidebarUser();
+  showView('merchant');
+}
+
+function showView(v) {
+  document.querySelectorAll('.view').forEach(function(x){ x.classList.remove('active'); });
+  document.querySelectorAll('.nav-lnk').forEach(function(x){ x.classList.remove('active'); });
+  var ve=el('view-'+v); if(ve) ve.classList.add('active');
+  var btn=document.querySelector('[data-view="'+v+'"]'); if(btn) btn.classList.add('active');
+  var titles={merchant:'Merchant',vouchers:'Vouchers',promotions:'Promotions',dashboard:'Dashboard',products:'Manage Merchant',media:'Banners & Announcements',users:'User Management'};
+  setText('topTitle', titles[v]||v);
+  closeSidebar();
+  if (v==='users')     loadUsers();
+  if (v==='dashboard') updateStats();
+  if (v==='media')     { renderBannersAdmin(); renderAnnouncementsAdmin(); renderVouchersAdmin(); renderPromotionsAdmin(); }
+  if (v==='vouchers')  renderVouchers();
+  if (v==='promotions') renderPromotions();
+}
+
+// ── IN-APP BROWSER ────────────────────────────────────────────────────────────
+var _iabUrl='', _iabHist=[], _iabHi=-1;
+
+function handleOrderNow(btn) {
+  var link = btn.getAttribute('data-link');
+  if (!link) { showToast('No link set for this product','error'); return; }
+  openBrowser(link);
+}
+
+function openBrowser(url) {
+  if (!url) { showToast('No link set','error'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  _iabHist = _iabHist.slice(0, _iabHi+1); _iabHist.push(url); _iabHi = _iabHist.length-1;
+  _iabLoad(url);
+  el('inAppBrowser').classList.add('iab-open');
+  document.body.style.overflow='hidden';
+}
+
+function closeBrowser() {
+  el('iabFrame').src='about:blank';
+  el('inAppBrowser').classList.remove('iab-open');
+  el('iabBlock').classList.remove('show');
+  document.body.style.overflow='';
+  _iabProg(0); _iabUrl='';
+}
+
+function iabBack()    { if(_iabHi<=0)return; _iabHi--; _iabLoad(_iabHist[_iabHi],true); }
+function iabForward() { if(_iabHi>=_iabHist.length-1)return; _iabHi++; _iabLoad(_iabHist[_iabHi],true); }
+function iabReload()  { if(_iabUrl) _iabLoad(_iabUrl,true); }
+function iabOpenExt() { if(_iabUrl) window.open(_iabUrl,'_blank'); }
+function iabGo(raw)   {
+  if(!raw) return; var url=raw.trim();
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  _iabHist=_iabHist.slice(0,_iabHi+1); _iabHist.push(url); _iabHi=_iabHist.length-1; _iabLoad(url);
+}
+
+function _iabLoad(url, skip) {
+  _iabUrl=url;
+  var bar=el('iabUrlBar'), lnk=el('iabBlockLink'), frame=el('iabFrame'), block=el('iabBlock');
+  if(bar) bar.value=url; if(lnk) lnk.href=url;
+  block.classList.remove('show'); frame.style.opacity='1';
+  _iabProg(25);
+  frame.onload=function(){ _iabProg(100); setTimeout(function(){ _iabProg(0); },500); };
+  frame.onerror=function(){ _iabProg(0); _iabShowBlock(url,'Could not load page','Check your internet connection.'); };
+  frame.src=url;
+  var back=el('iabBtnBack'), fwd=el('iabBtnFwd');
+  if(back) back.disabled=(_iabHi<=0); if(fwd) fwd.disabled=(_iabHi>=_iabHist.length-1);
+}
+
+function _iabProg(pct) {
+  var b=el('iabProgressFill'); if(!b) return;
+  b.style.opacity = pct===0?'0':'1'; b.style.width=pct+'%';
+}
+
+function _iabShowBlock(url, title, msg) {
+  setText('iabBlockTitle',title); setText('iabBlockMsg',msg);
+  var lnk=el('iabBlockLink'); if(lnk) lnk.href=url;
+  el('iabBlock').classList.add('show'); el('iabFrame').style.opacity='0.05';
+}
+
+document.addEventListener('keydown', function(e){
+  if (e.key==='Escape') {
+    document.querySelectorAll('.modal-ov.open').forEach(function(m){ m.classList.remove('open'); });
+    el('pdModal').classList.remove('open');
+    if (el('inAppBrowser').classList.contains('iab-open')) closeBrowser();
+    closeSidebar();
+  }
+});
+</script>
+
+<style>
+:root{
+  --bg:#0b0d11;--sf:#13161e;--panel:#1a1e29;--border:#242838;
+  --accent:#f0a500;--accent2:#e05c2a;--aRGB:240,165,0;
+  --text:#eef0f7;--muted:#6b7494;
+  --ok:#27c97a;--err:#e05252;--info:#4a9eff;--warn:#f5a623;
+  --r:14px;--shadow:0 12px 48px rgba(0,0,0,.6);
+  --head:'Syne',sans-serif;--body:'DM Sans',sans-serif;--nav:240px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--body);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* LOADER */
+#appLoader{position:fixed;inset:0;background:var(--bg);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px;display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+
+/* AUTH */
+#authSection{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;
+  background:radial-gradient(ellipse 55% 45% at 15% 25%,rgba(240,165,0,.13) 0%,transparent 65%),
+             radial-gradient(ellipse 45% 40% at 85% 75%,rgba(224,92,42,.1) 0%,transparent 60%),var(--bg)}
+.auth-wrap{width:min(900px,100%);display:grid;grid-template-columns:1fr 1fr;border-radius:24px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border)}
+.auth-hero{background:linear-gradient(145deg,#1a1e29,#0d1020);padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid var(--border)}
+.auth-hero h1{font-family:var(--head);font-size:30px;font-weight:800;line-height:1.2;margin-bottom:14px}
+.auth-hero p{color:var(--muted);line-height:1.7;font-size:15px}
+.hero-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+.hero-pill{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:20px;padding:5px 13px;font-size:12px;color:var(--muted)}
+.auth-form{background:var(--sf);padding:48px 40px}
+.auth-tabs{display:flex;gap:4px;background:var(--panel);border-radius:10px;padding:4px;margin-bottom:26px}
+.auth-tab{flex:1;padding:9px;border:none;border-radius:7px;background:transparent;color:var(--muted);font-family:var(--body);font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
+.auth-tab.active{background:var(--border);color:var(--text)}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.logo-wrap{display:flex;align-items:center;gap:12px;margin-bottom:36px}
+.logo-mark{width:44px;height:44px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:12px;display:grid;place-items:center;font-family:var(--head);font-weight:800;font-size:18px;color:#fff;flex-shrink:0}
+.logo-text{font-family:var(--head);font-size:20px;font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.auth-notice{background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.25);border-radius:10px;padding:12px 14px;font-size:13px;color:#7ab8ff;line-height:1.6;margin-bottom:16px}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:14px 0}
+.auth-divider::before,.auth-divider::after{content:"";flex:1;height:1px;background:var(--border)}
+.auth-divider span{font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* FORM */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;letter-spacing:.04em;text-transform:uppercase}
+.field input,.field select,.field textarea{width:100%;padding:11px 13px;background:var(--panel);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--body);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--aRGB),.12)}
+.field select option{background:var(--panel)}
+.field textarea{resize:vertical;min-height:70px}
+.field-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 20px;border:none;border-radius:10px;font-family:var(--body);font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px rgba(var(--aRGB),.3)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-full{width:100%;margin-top:4px}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-ghost:hover{background:var(--panel)}
+.btn-sm{padding:6px 12px;border-radius:8px;font-size:12px;border:none;cursor:pointer;font-family:var(--body);font-weight:500;transition:all .15s}
+.btn-edit{background:rgba(var(--aRGB),.12);color:var(--accent)}.btn-edit:hover{background:rgba(var(--aRGB),.22)}
+.btn-del{background:rgba(224,82,82,.12);color:var(--err)}.btn-del:hover{background:rgba(224,82,82,.22)}
+
+/* SHELL */
+#appSection{display:none;flex-direction:row;min-height:100vh}
+
+/* SIDEBAR */
+#sidebar{width:var(--nav);flex-shrink:0;background:var(--sf);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;transition:transform .3s}
+.sbar-logo{display:flex;align-items:center;gap:10px;padding:20px 16px 16px;border-bottom:1px solid var(--border)}
+.sbar-logo .logo-text{font-size:17px}
+.nav-section{padding:12px 8px 6px;flex:1;overflow-y:auto}
+.nav-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:8px 10px 4px}
+.nav-lnk{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--muted);font-size:14px;font-weight:500;cursor:pointer;transition:all .18s;margin-bottom:1px;border:none;background:transparent;width:100%;text-align:left}
+.nav-lnk:hover{background:var(--panel);color:var(--text)}
+.nav-lnk.active{background:rgba(var(--aRGB),.12);color:var(--accent)}
+.nav-lnk .ico{font-size:16px;width:20px;text-align:center}
+.sbar-foot{padding:12px;border-top:1px solid var(--border)}
+.sbar-user{display:flex;align-items:center;gap:10px;cursor:pointer;border-radius:10px;padding:8px;transition:background .2s}
+.sbar-user:hover{background:var(--panel)}
+.av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-family:var(--head);font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.av-sm{width:28px;height:28px;font-size:11px}
+.sbar-uinfo{flex:1;min-width:0}
+.sbar-uname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbar-urole{font-size:11px;color:var(--muted);text-transform:capitalize}
+.btn-logout{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:17px;padding:4px;transition:color .2s}
+.btn-logout:hover{color:var(--err)}
+#sbarOvl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199}
+#sbarOvl.open{display:block}
+
+/* MAIN */
+.main{margin-left:var(--nav);flex:1;display:flex;flex-direction:column;min-height:100vh}
+.topbar{position:sticky;top:0;z-index:100;background:rgba(11,13,17,.88);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:13px 22px;display:flex;align-items:center;gap:12px}
+.topbar-ham{display:none;background:transparent;border:none;color:var(--text);font-size:22px;cursor:pointer;padding:2px 6px}
+.topbar-title{font-family:var(--head);font-size:18px;font-weight:700;flex:1}
+.search-wrap{position:relative}
+.search-wrap input{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 13px 9px 34px;color:var(--text);font-size:13px;width:210px;outline:none;transition:all .2s;font-family:var(--body)}
+.search-wrap input:focus{border-color:var(--accent);width:250px}
+.search-wrap .si{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px}
+.ico-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:8px 12px;cursor:pointer;font-size:15px;transition:all .2s}
+.ico-btn:hover{background:var(--border)}
+
+/* CONTENT */
+.content{padding:22px;flex:1}
+.view{display:none}.view.active{display:block}
+
+/* ANNOUNCEMENT BAR */
+.ann-bar{padding:11px 20px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500}
+.ann-bar button{background:transparent;border:none;cursor:pointer;opacity:.6;font-size:16px;color:inherit;margin-left:auto}
+.ann-info{background:rgba(74,158,255,.15);color:var(--info);border-bottom:1px solid rgba(74,158,255,.2)}
+.ann-warning{background:rgba(245,166,35,.15);color:var(--warn);border-bottom:1px solid rgba(245,166,35,.2)}
+.ann-success{background:rgba(39,201,122,.15);color:var(--ok);border-bottom:1px solid rgba(39,201,122,.2)}
+.ann-error{background:rgba(224,82,82,.15);color:var(--err);border-bottom:1px solid rgba(224,82,82,.2)}
+
+/* CAROUSEL */
+#bannerCarousel{position:relative;border-radius:var(--r);overflow:hidden;margin-bottom:22px;height:260px}
+.c-slide{display:none;position:absolute;inset:0}
+.c-slide.show{display:block}
+.c-slide img{width:100%;height:100%;object-fit:cover}
+.c-cap{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,0,0,.8),transparent);padding:30px 26px 18px;color:#fff}
+.c-cap h2{font-family:var(--head);font-size:22px;font-weight:700}
+.c-cap p{font-size:14px;opacity:.8;margin-top:4px}
+.c-btn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;font-size:26px;cursor:pointer;padding:6px 13px;z-index:5;border-radius:8px}
+.c-prev{left:12px}.c-next{right:12px}
+.c-dots{position:absolute;bottom:12px;right:16px;display:flex;gap:6px;z-index:5}
+.cdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.4);cursor:pointer;transition:all .2s}
+.cdot.on{background:#fff;width:20px;border-radius:4px}
+
+/* CATEGORY BAR */
+#catBar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px;scrollbar-width:none}
+#catBar::-webkit-scrollbar{display:none}
+.cat-btn{padding:7px 15px;border-radius:20px;border:1px solid var(--border);background:var(--panel);color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .2s;font-family:var(--body)}
+.cat-btn:hover{border-color:var(--accent);color:var(--text)}
+.cat-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+
+/* FEATURED */
+#featuredStrip{margin-bottom:22px}
+.feat-scroll{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.feat-scroll::-webkit-scrollbar{display:none}
+.feat-scroll .pcard{min-width:190px;max-width:190px}
+.feat-scroll .pcard .pcard-img{height:130px}
+
+/* PRODUCT GRID */
+.sec-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.sec-hdr h2{font-family:var(--head);font-size:17px;font-weight:700;flex:1}
+#productGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
+.pcard{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .25s,box-shadow .25s,border-color .25s;cursor:pointer}
+.pcard:hover{transform:translateY(-4px);box-shadow:0 14px 40px rgba(0,0,0,.5);border-color:rgba(var(--aRGB),.3)}
+.pcard-img{height:185px;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:44px;position:relative;overflow:hidden}
+.pcard-img img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
+.pcard:hover .pcard-img img{transform:scale(1.05)}
+.badge{position:absolute;top:10px;left:10px;background:rgba(var(--aRGB),.85);color:#000;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px}
+.badge-gold{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.pcard-body{padding:13px}
+.pcard-title{font-family:var(--head);font-size:14px;font-weight:700;margin-bottom:4px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pcard-desc{font-size:12px;color:var(--muted);margin-bottom:9px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pcard-footer{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.pcard-price{font-family:var(--head);font-size:16px;font-weight:700;color:var(--accent)}
+.stock-tag{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
+.stock-tag.in{background:rgba(39,201,122,.15);color:var(--ok)}.stock-tag.out{background:rgba(224,82,82,.15);color:var(--err)}
+.btn-addcart{width:100%;padding:8px;background:linear-gradient(135deg,rgba(240,165,0,.15),rgba(224,92,42,.12));border:1px solid rgba(var(--aRGB),.3);color:var(--accent);border-radius:8px;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-addcart:hover{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.btn-addcart-disabled{opacity:.4;pointer-events:none}
+
+/* PRODUCT DETAIL */
+#pdModal{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.75);backdrop-filter:blur(10px);align-items:center;justify-content:center;padding:16px}
+#pdModal.open{display:flex}
+.pd-box{background:var(--sf);border:1px solid var(--border);border-radius:22px;width:min(660px,100%);max-height:90vh;overflow:hidden;display:flex;flex-direction:row;box-shadow:var(--shadow);position:relative}
+.pd-left{width:280px;flex-shrink:0;background:var(--panel)}
+.pd-main-img{height:260px;overflow:hidden}.pd-main-img img{width:100%;height:100%;object-fit:cover}
+.pd-thumbs{display:flex;gap:6px;padding:8px 10px;background:rgba(0,0,0,.25)}
+.pd-thumbs img{width:50px;height:50px;object-fit:cover;border-radius:7px;cursor:pointer;border:2px solid transparent;transition:all .2s;opacity:.7}
+.pd-thumbs img:hover{border-color:var(--accent);opacity:1}
+.pd-right{flex:1;padding:22px;overflow-y:auto}
+.pd-close{position:absolute;top:12px;right:14px;background:rgba(0,0,0,.55);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;z-index:5}
+.pd-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.pill{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px}
+.pill-hot{background:rgba(var(--aRGB),.12);color:var(--accent)}.pill-gold{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}.pill-cat{background:rgba(255,255,255,.07);color:var(--muted)}
+.pd-title{font-family:var(--head);font-size:21px;font-weight:800;line-height:1.2;margin-bottom:4px}
+.pd-sku{font-size:12px;color:var(--muted);margin-bottom:8px}
+.pd-price{font-family:var(--head);font-size:27px;font-weight:800;color:var(--accent);margin-bottom:8px}
+.pd-stock{font-size:13px;font-weight:500;margin-bottom:10px}.pd-stock.in{color:var(--ok)}.pd-stock.out{color:var(--err)}
+.pd-desc{font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:16px}
+.pd-actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+.pd-admin{display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
+
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.stat-label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.stat-val{font-family:var(--head);font-size:32px;font-weight:800}.stat-val.gold{color:var(--accent)}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.dash-card{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.dash-card h3{font-family:var(--head);font-size:14px;font-weight:700;margin-bottom:16px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-lbl{font-size:12px;color:var(--muted);width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.bar-track{flex:1;background:var(--panel);border-radius:4px;height:7px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .6s}
+.bar-val{font-size:12px;color:var(--muted);width:22px;text-align:right}
+.perm-t td,.perm-t th{padding:7px 6px;font-size:12px}
+.perm-t th{color:var(--muted);text-align:left}
+.perm-t td:nth-child(2),.perm-t td:nth-child(3),.perm-t td:nth-child(4){text-align:center;font-size:15px}
+
+/* MANAGE LIST */
+#manageList{display:flex;flex-direction:column;gap:10px}
+.mrow{display:flex;align-items:center;gap:14px;background:var(--panel);border-radius:12px;padding:12px 16px;border:1px solid var(--border)}
+.mrow:hover{border-color:rgba(var(--aRGB),.3)}
+.mrow-thumb{width:54px;height:54px;background:var(--sf);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.mrow-thumb img{width:100%;height:100%;object-fit:cover}
+.mrow-info{flex:1}.mrow-info strong{font-size:14px;font-weight:600;display:block;margin-bottom:3px}.mrow-info span{font-size:12px;color:var(--muted)}
+.mrow-acts{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.star-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:18px;transition:all .2s;opacity:.5;padding:2px}
+.star-btn:hover,.star-btn.on{opacity:1;color:var(--accent)}
+
+/* MEDIA */
+.media-sec{margin-bottom:26px}
+.media-sec h3{font-family:var(--head);font-size:15px;font-weight:700;margin-bottom:12px}
+.media-row{display:flex;align-items:center;gap:14px;padding:13px;background:var(--panel);border-radius:12px;margin-bottom:8px;border:1px solid var(--border)}
+.media-thumb{width:68px;height:48px;background:var(--sf);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.media-thumb img{width:100%;height:100%;object-fit:cover}
+.media-info{flex:1;display:flex;flex-direction:column;gap:2px}
+.media-info strong{font-size:13px;font-weight:600}.media-info span{font-size:12px;color:var(--muted)}.media-info a{font-size:11px;color:var(--accent)}
+.media-acts{display:flex;align-items:center;gap:10px}
+.tog{display:flex;align-items:center;cursor:pointer}
+.tog input{display:none}
+.tog span{width:38px;height:20px;background:var(--border);border-radius:10px;position:relative;transition:background .2s;display:block}
+.tog span::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s}
+.tog input:checked+span{background:var(--ok)}.tog input:checked+span::after{transform:translateX(18px)}
+.ann-row{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--panel);border-radius:10px;margin-bottom:7px;border:1px solid var(--border)}
+.ann-type-tag{font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:6px;background:rgba(var(--aRGB),.12);color:var(--accent);flex-shrink:0}
+.ann-row-text{flex:1;font-size:13px}
+
+/* VOUCHERS */
+#voucherList{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.voucher-card{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);display:flex;overflow:hidden;transition:border-color .25s,transform .25s}
+.voucher-card:hover{border-color:rgba(var(--aRGB),.4);transform:translateY(-2px)}
+.voucher-card.expired{opacity:.5}
+.vc-left{flex:1;padding:18px;border-right:2px dashed var(--border)}
+.vc-code{font-family:var(--head);font-size:20px;font-weight:800;color:var(--accent);letter-spacing:.08em;margin-bottom:6px}
+.vc-desc{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:6px}
+.vc-min{font-size:11px;color:var(--muted)}
+.vc-expiry{font-size:11px;margin-top:4px;font-weight:600}
+.exp-ok{color:var(--ok)}.exp-red{color:var(--err)}
+.vc-right{width:110px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:4px;background:rgba(var(--aRGB),.05)}
+.vc-discount{font-family:var(--head);font-size:28px;font-weight:800;color:var(--accent);line-height:1}
+.vc-off{font-size:11px;font-weight:700;color:var(--accent2);letter-spacing:.1em}
+.vc-copy{margin-top:10px;padding:7px 12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#fff;font-family:var(--body);font-size:12px;font-weight:600;cursor:pointer}
+.vc-copy:hover{opacity:.85}.vc-copy:disabled{opacity:.4;cursor:not-allowed}
+.vc-admin-code{font-family:var(--head);font-size:15px;font-weight:800;color:var(--accent);background:rgba(var(--aRGB),.1);border-radius:8px;padding:8px 12px;flex-shrink:0}
+
+/* PROMOTIONS */
+#promoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+.promo-card{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .25s,box-shadow .25s,border-color .25s}
+.promo-card:hover{transform:translateY(-4px);box-shadow:0 14px 40px rgba(0,0,0,.5);border-color:rgba(var(--aRGB),.3)}
+.promo-card.expired{opacity:.55}
+.promo-img{height:170px;position:relative;overflow:hidden;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:44px}
+.promo-img img{width:100%;height:100%;object-fit:cover}
+.promo-badge{position:absolute;top:10px;left:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px}
+.promo-body{padding:16px}
+.promo-title{font-family:var(--head);font-size:15px;font-weight:700;margin-bottom:6px;line-height:1.3}
+.promo-desc{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px}
+.promo-dates{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted)}
+
+/* TABLE */
+.tbl-wrap{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--panel)}
+th{padding:12px 15px;font-size:11px;font-weight:700;color:var(--muted);text-align:left;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-align:middle}
+.td-muted{color:var(--muted);font-size:12px}.td-empty{text-align:center;color:var(--muted);padding:28px}
+.row-susp td{opacity:.55}
+.ucell{display:flex;align-items:center;gap:9px}
+.role-sel{background:var(--panel);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:5px 8px;font-size:12px;font-family:var(--body);cursor:pointer;outline:none}
+.sdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+.sdot-on{background:var(--ok);box-shadow:0 0 5px var(--ok)}.sdot-off{background:var(--err)}
+
+/* MODAL */
+.modal-ov{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.72);backdrop-filter:blur(9px);align-items:center;justify-content:center;padding:16px}
+.modal-ov.open{display:flex}
+.modal{background:var(--sf);border:1px solid var(--border);border-radius:20px;padding:26px;width:min(500px,100%);box-shadow:var(--shadow);max-height:90vh;overflow-y:auto;position:relative}
+.modal h2{font-family:var(--head);font-size:18px;font-weight:700;margin-bottom:18px}
+.modal-foot{display:flex;gap:10px;margin-top:16px;justify-content:flex-end}
+.modal-tabs{display:flex;gap:4px;background:var(--panel);border-radius:10px;padding:4px;margin-bottom:18px}
+.modal-tab{flex:1;padding:8px;border:none;border-radius:7px;background:transparent;color:var(--muted);font-family:var(--body);font-size:13px;cursor:pointer;transition:all .2s}
+.modal-tab.active{background:var(--border);color:var(--text)}
+
+/* IN-APP BROWSER */
+#inAppBrowser{display:none;position:fixed;inset:0;z-index:500;flex-direction:column;background:#0b0d11}
+#inAppBrowser.iab-open{display:flex}
+.iab-bar{display:flex;align-items:center;gap:6px;padding:8px 10px;height:54px;flex-shrink:0;background:#13161e;border-bottom:1px solid #242838}
+.iab-btn{width:34px;height:34px;flex-shrink:0;background:#1a1e29;border:1px solid #242838;border-radius:9px;color:#eef0f7;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.iab-btn:hover{background:#242838}.iab-btn:disabled{opacity:.3;cursor:default}
+.iab-url-row{flex:1;min-width:0;display:flex;align-items:center;gap:7px;background:#0b0d11;border:1px solid #242838;border-radius:10px;padding:0 12px;height:34px}
+.iab-lock{font-size:12px;flex-shrink:0}
+.iab-url-input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:#eef0f7;font-size:13px;font-family:'DM Sans',sans-serif}
+.iab-x-btn{background:#2a1818;border-color:#4a2020;color:#e05252;font-size:18px}
+.iab-x-btn:hover{background:#3d2020}
+#iabProgress{height:3px;flex-shrink:0;background:transparent;overflow:hidden}
+#iabProgressFill{height:100%;width:0;opacity:0;background:linear-gradient(90deg,#f0a500,#e05c2a);transition:width .25s,opacity .3s}
+#iabWrap{flex:1;position:relative;overflow:hidden}
+#iabFrame{position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;transition:opacity .2s}
+#iabBlock{display:none;position:absolute;inset:0;background:#0b0d11;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px;gap:12px}
+#iabBlock.show{display:flex}
+#iabBlockTitle{font-family:'Syne',sans-serif;font-size:20px;font-weight:700}
+#iabBlockMsg{color:#6b7494;font-size:14px;max-width:340px;line-height:1.6}
+
+/* TOAST */
+#toastArea{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 18px;font-size:13px;font-family:var(--body);transform:translateX(120%);transition:transform .3s cubic-bezier(.34,1.56,.64,1);max-width:300px;pointer-events:all;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.toast.show{transform:translateX(0)}
+.toast-success{border-color:rgba(39,201,122,.3)}.toast-error{border-color:rgba(224,82,82,.35)}
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);grid-column:1/-1}
+.empty-icon{font-size:44px;margin-bottom:10px}
+.empty-msg{color:var(--muted);font-size:13px;padding:16px}
+
+/* RESPONSIVE */
+@media(max-width:820px){
+  :root{--nav:0px}
+  #sidebar{transform:translateX(-240px);width:240px}
+  #sidebar.mob-open{transform:translateX(0)}
+  .main{margin-left:0}.topbar-ham{display:block}
+  .search-wrap input{width:150px}.search-wrap input:focus{width:180px}
+  .dash-grid{grid-template-columns:1fr}
+  #productGrid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px}
+  .pd-box{flex-direction:column;overflow-y:auto}.pd-left{width:100%}
+  .auth-wrap{grid-template-columns:1fr;max-width:420px}.auth-hero{display:none}.auth-form{padding:36px 24px}
+  #voucherList{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+  .content{padding:14px}.topbar{padding:11px 14px}
+  .stats-row{grid-template-columns:1fr 1fr}
+  #productGrid{grid-template-columns:1fr 1fr;gap:10px}
+  .field-2{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="toastArea"></div>
+<div id="appLoader"><div class="spin"></div><p style="color:var(--muted);font-size:14px">Loading…</p></div>
+
+<!-- AUTH -->
+<div id="authSection">
+  <div class="auth-wrap">
+    <div class="auth-hero">
+      <div>
+        <div class="logo-wrap"><div class="logo-mark">B</div><span class="logo-text">BigPOS Market</span></div>
+        <h1>Your local marketplace, elevated.</h1>
+        <p>Browse products, redeem vouchers and discover promotions from trusted sellers.</p>
+        <div class="hero-pills">
+          <span class="hero-pill">🏪 Merchant Listings</span>
+          <span class="hero-pill">🎟️ Vouchers</span>
+          <span class="hero-pill">🎉 Promotions</span>
+          <span class="hero-pill">📢 Announcements</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--muted)">Powered by Firebase · BigPOS Marketplace</p>
+    </div>
+    <div class="auth-form">
+      <div id="connectBar" style="display:none;background:rgba(224,82,82,.15);border:1px solid rgba(224,82,82,.3);border-radius:10px;padding:12px 14px;font-size:13px;color:#e05252;margin-bottom:16px;line-height:1.6"></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabBtnLogin" onclick="switchAuthTab('login',this)">Sign In</button>
+        <button class="auth-tab"        id="tabBtnReg"   onclick="switchAuthTab('reg',this)">Register</button>
+      </div>
+      <!-- SIGN IN -->
+      <div id="tab-login" class="tab-panel active">
+        <div class="field"><label>Email</label>
+          <input type="email" id="loginEmail" placeholder="you@example.com" autocomplete="email"
+            onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div class="field"><label>Password</label>
+          <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"
+            onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div id="loginMsg" style="display:none"></div>
+        <button class="btn btn-primary btn-full" id="btnLogin" data-label="Sign In" onclick="doLogin()">Sign In</button>
+        <button class="btn btn-ghost btn-full" id="btnForgot" data-label="Forgot password?" onclick="doResetPassword()"
+          style="margin-top:8px;font-size:13px">Forgot password?</button>
+        <div class="auth-divider"><span>First time or no password yet?</span></div>
+        <button class="btn btn-ghost btn-full" onclick="switchAuthTab('reg',document.getElementById('tabBtnReg'))"
+          style="font-size:13px">Go to Register →</button>
+      </div>
+      <!-- REGISTER -->
+      <div id="tab-reg" class="tab-panel">
+        <div class="auth-notice">
+          <strong>📋 Register here</strong> — whether you're new <em>or</em> your account was created in Firebase Console (this sets your password).
+        </div>
+        <div class="field"><label>Full Name</label><input type="text" id="regName" placeholder="Allan Koay" autocomplete="name"/></div>
+        <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com" autocomplete="email"/></div>
+        <div class="field"><label>Password</label><input type="password" id="regPass" placeholder="Min 6 characters" autocomplete="new-password"/></div>
+        <div class="field"><label>Confirm Password</label>
+          <input type="password" id="regPass2" placeholder="Repeat password" autocomplete="new-password"
+            onkeydown="if(event.key==='Enter')doRegisterPublic()"/></div>
+        <div id="regMsg" style="display:none"></div>
+        <button class="btn btn-primary btn-full" id="btnReg" data-label="Create Account" onclick="doRegisterPublic()">Create Account</button>
+        <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.6">
+          New accounts start as <strong style="color:var(--text)">User</strong>. A Super Admin can upgrade your role.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appSection">
+  <div id="sbarOvl" onclick="closeSidebar()"></div>
+  <nav id="sidebar">
+    <div class="sbar-logo">
+      <div class="logo-mark" style="width:30px;height:30px;font-size:13px;border-radius:8px">B</div>
+      <span class="logo-text">BigPOS Market</span>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Browse</div>
+      <button class="nav-lnk active" data-view="merchant"   onclick="showView('merchant')"><span class="ico">🏪</span>Merchant</button>
+      <button class="nav-lnk"        data-view="vouchers"   onclick="showView('vouchers')"><span class="ico">🎟️</span>Vouchers</button>
+      <button class="nav-lnk"        data-view="promotions" onclick="showView('promotions')"><span class="ico">🎉</span>Promotions</button>
+      <div id="navManage" style="display:none">
+        <div class="nav-label" style="margin-top:10px">Management</div>
+        <button class="nav-lnk" data-view="products" onclick="showView('products')"><span class="ico">🏪</span>Manage Merchant</button>
+      </div>
+      <div id="navMedia" style="display:none">
+        <button class="nav-lnk" data-view="media" onclick="showView('media')"><span class="ico">🖼️</span>Banners &amp; Announcements</button>
+      </div>
+      <div id="navSuperAdmin" style="display:none">
+        <div class="nav-label" style="margin-top:10px">Super Admin</div>
+        <button class="nav-lnk" data-view="dashboard" onclick="showView('dashboard')"><span class="ico">📊</span>Dashboard</button>
+        <button class="nav-lnk" data-view="users"     onclick="showView('users')"><span class="ico">👥</span>Users</button>
+      </div>
+    </div>
+    <div class="sbar-foot">
+      <div class="sbar-user" onclick="openProfileModal()">
+        <div class="av" id="sbarAv">?</div>
+        <div class="sbar-uinfo"><div class="sbar-uname" id="sbarName">—</div><div class="sbar-urole" id="sbarRole">—</div></div>
+        <button class="btn-logout" onclick="event.stopPropagation();doLogout()" title="Sign out">⏻</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="topbar-ham" onclick="openSidebar()">☰</button>
+      <span class="topbar-title" id="topTitle">Merchant</span>
+      <div class="search-wrap"><span class="si">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search products…" oninput="filterProducts()"/></div>
+      <button class="ico-btn" onclick="openProfileModal()" title="Profile">👤</button>
+    </div>
+    <div id="annBar" style="display:none"></div>
+    <div class="content">
+
+      <!-- MERCHANT -->
+      <div id="view-merchant" class="view active">
+        <div id="bannerCarousel" style="display:none"></div>
+        <div id="catBar"></div>
+        <div id="featuredStrip" style="display:none">
+          <div class="sec-hdr"><h2>⭐ Featured</h2></div>
+          <div class="feat-scroll" id="featuredRow"></div>
+        </div>
+        <div class="sec-hdr"><h2>All Products</h2><span id="productCount" style="color:var(--muted);font-size:13px"></span></div>
+        <div id="productGrid"><div class="empty-state"><div class="empty-icon">🛍️</div><p>Loading…</p></div></div>
+      </div>
+
+      <!-- VOUCHERS -->
+      <div id="view-vouchers" class="view">
+        <div class="sec-hdr"><h2>🎟️ Vouchers</h2><span style="color:var(--muted);font-size:13px">Tap a code to copy</span></div>
+        <div id="voucherList"></div>
+      </div>
+
+      <!-- PROMOTIONS -->
+      <div id="view-promotions" class="view">
+        <div class="sec-hdr"><h2>🎉 Promotions</h2></div>
+        <div id="promoGrid"></div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <div id="view-dashboard" class="view">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">Products</div><div class="stat-val gold" id="statProducts">0</div></div>
+          <div class="stat-card"><div class="stat-label">Featured</div><div class="stat-val" id="statFeatured">0</div></div>
+          <div class="stat-card"><div class="stat-label">Categories</div><div class="stat-val" id="statCategories">0</div></div>
+          <div class="stat-card"><div class="stat-label">Users</div><div class="stat-val" id="statUsers">—</div></div>
+        </div>
+        <div class="dash-grid">
+          <div class="dash-card"><h3>📊 Products by Category</h3><div id="catChart"><p class="empty-msg">No data</p></div></div>
+          <div class="dash-card">
+            <h3>🔐 Permissions</h3>
+            <table class="perm-t" style="width:100%">
+              <thead><tr><th>Permission</th><th>User</th><th>Admin</th><th>Super</th></tr></thead>
+              <tbody>
+                <tr><td>Browse</td><td>✅</td><td>✅</td><td>✅</td></tr>
+                <tr><td>Add/Edit Products</td><td>❌</td><td>✅</td><td>✅</td></tr>
+                <tr><td>Banners &amp; Announcements</td><td>❌</td><td>✅</td><td>✅</td></tr>
+                <tr><td>Vouchers &amp; Promotions</td><td>❌</td><td>✅</td><td>✅</td></tr>
+                <tr><td>Dashboard &amp; Users</td><td>❌</td><td>❌</td><td>✅</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- MANAGE MERCHANT -->
+      <div id="view-products" class="view">
+        <div class="sec-hdr"><h2>🏪 Manage Merchant</h2><button class="btn btn-primary" onclick="openModal('productModal')">+ Add Product</button></div>
+        <div id="manageList"></div>
+      </div>
+
+      <!-- MEDIA -->
+      <div id="view-media" class="view">
+        <div class="media-sec"><div class="sec-hdr"><h2>🖼️ Banners</h2><button class="btn btn-primary" onclick="openModal('bannerModal')">+ Add Banner</button></div><div id="bannersAdmin"></div></div>
+        <div class="media-sec"><div class="sec-hdr"><h2>📢 Announcements</h2><button class="btn btn-primary" onclick="openModal('annModal')">+ Add Announcement</button></div><div id="annsAdmin"></div></div>
+        <div class="media-sec"><div class="sec-hdr"><h2>🎟️ Vouchers</h2><button class="btn btn-primary" onclick="openModal('voucherModal')">+ Add Voucher</button></div><div id="vouchersAdmin"></div></div>
+        <div class="media-sec"><div class="sec-hdr"><h2>🎉 Promotions</h2><button class="btn btn-primary" onclick="openModal('promoModal')">+ Add Promotion</button></div><div id="promosAdmin"></div></div>
+      </div>
+
+      <!-- USERS -->
+      <div id="view-users" class="view">
+        <div class="sec-hdr"><h2>👥 Users</h2><button class="btn btn-primary" onclick="openModal('addUserModal')">+ Create User</button></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Action</th></tr></thead>
+            <tbody id="usersTbody"><tr><td colspan="6" class="td-empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Product Detail -->
+<div id="pdModal" onclick="if(event.target===this)closePD()"></div>
+
+<!-- MODALS -->
+<div class="modal-ov" id="productModal" onclick="handleOC(event,'productModal')"><div class="modal"><h2>➕ Add Product</h2>
+  <div class="field"><label>Title *</label><input type="text" id="pTitle" placeholder="Product name"/></div>
+  <div class="field"><label>Description</label><textarea id="pDesc" placeholder="Describe the product…"></textarea></div>
+  <div class="field-2"><div class="field"><label>Price (RM) *</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" min="0"/></div>
+  <div class="field"><label>Stock (units)</label><input type="number" id="pStock" placeholder="50" min="0"/></div></div>
+  <div class="field-2"><div class="field"><label>Category</label><input type="text" id="pCat" placeholder="e.g. Electronics"/></div>
+  <div class="field"><label>SKU</label><input type="text" id="pSku" placeholder="SKU-001"/></div></div>
+  <div class="field"><label>Badge Label</label><input type="text" id="pBadge" placeholder="NEW · SALE · HOT"/></div>
+  <div class="field"><label>Main Image URL</label><input type="url" id="pImg" placeholder="https://…"/></div>
+  <div class="field-2"><div class="field"><label>Image 2</label><input type="url" id="pImg2" placeholder="https://…"/></div>
+  <div class="field"><label>Image 3</label><input type="url" id="pImg3" placeholder="https://…"/></div></div>
+  <div class="field"><label>Product Link 🔗</label><input type="url" id="pLink" placeholder="https://…"/></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button><button class="btn btn-primary" onclick="doAddProduct()">Add Product</button></div>
+</div></div>
+
+<div class="modal-ov" id="editProductModal" onclick="handleOC(event,'editProductModal')"><div class="modal"><h2>✏️ Edit Product</h2>
+  <div class="field"><label>Title *</label><input type="text" id="epTitle"/></div>
+  <div class="field"><label>Description</label><textarea id="epDesc"></textarea></div>
+  <div class="field-2"><div class="field"><label>Price (RM) *</label><input type="number" id="epPrice" step="0.01" min="0"/></div>
+  <div class="field"><label>Stock</label><input type="number" id="epStock" min="0"/></div></div>
+  <div class="field-2"><div class="field"><label>Category</label><input type="text" id="epCat"/></div>
+  <div class="field"><label>SKU</label><input type="text" id="epSku"/></div></div>
+  <div class="field"><label>Badge</label><input type="text" id="epBadge"/></div>
+  <div class="field"><label>Main Image URL</label><input type="url" id="epImg"/></div>
+  <div class="field-2"><div class="field"><label>Image 2</label><input type="url" id="epImg2"/></div>
+  <div class="field"><label>Image 3</label><input type="url" id="epImg3"/></div></div>
+  <div class="field"><label>Product Link 🔗</label><input type="url" id="epLink"/></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('editProductModal')">Cancel</button><button class="btn btn-primary" onclick="doSaveEdit(document.getElementById('editProductModal').dataset.pid)">Save Changes</button></div>
+</div></div>
+
+<div class="modal-ov" id="bannerModal" onclick="handleOC(event,'bannerModal')"><div class="modal"><h2>🖼️ Add Banner</h2>
+  <div class="field"><label>Headline *</label><input type="text" id="banTitle" placeholder="e.g. Summer Sale — 50% Off!"/></div>
+  <div class="field"><label>Subtitle</label><input type="text" id="banSub" placeholder="Short tagline (optional)"/></div>
+  <div class="field"><label>Image URL *</label><input type="url" id="banImg" placeholder="https://…"/></div>
+  <div class="field"><label>Click Link 🔗</label><input type="url" id="banLink" placeholder="https://… (optional)"/></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('bannerModal')">Cancel</button><button class="btn btn-primary" onclick="doAddBanner()">Add Banner</button></div>
+</div></div>
+
+<div class="modal-ov" id="annModal" onclick="handleOC(event,'annModal')"><div class="modal"><h2>📢 Post Announcement</h2>
+  <div class="field"><label>Message *</label><textarea id="annText" placeholder="e.g. 🎉 Free shipping this weekend!"></textarea></div>
+  <div class="field"><label>Type</label><select id="annType"><option value="info">ℹ️ Info (blue)</option><option value="success">✅ Success (green)</option><option value="warning">⚠️ Warning (yellow)</option><option value="error">🚨 Alert (red)</option></select></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('annModal')">Cancel</button><button class="btn btn-primary" onclick="doAddAnnouncement()">Post</button></div>
+</div></div>
+
+<div class="modal-ov" id="voucherModal" onclick="handleOC(event,'voucherModal')"><div class="modal"><h2>🎟️ Add Voucher</h2>
+  <div class="field-2"><div class="field"><label>Code *</label><input type="text" id="vCode" placeholder="SAVE20" style="text-transform:uppercase"/></div>
+  <div class="field"><label>Type</label><select id="vType"><option value="percent">% Percentage</option><option value="fixed">RM Fixed</option></select></div></div>
+  <div class="field-2"><div class="field"><label>Discount *</label><input type="number" id="vDiscount" placeholder="20" min="0" step="0.01"/></div>
+  <div class="field"><label>Min. Order (RM)</label><input type="number" id="vMinOrder" placeholder="50.00" min="0" step="0.01"/></div></div>
+  <div class="field"><label>Description</label><input type="text" id="vDesc" placeholder="e.g. 20% off all electronics"/></div>
+  <div class="field"><label>Expiry Date</label><input type="date" id="vExpiry"/></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('voucherModal')">Cancel</button><button class="btn btn-primary" onclick="doAddVoucher()">Add Voucher</button></div>
+</div></div>
+
+<div class="modal-ov" id="promoModal" onclick="handleOC(event,'promoModal')"><div class="modal"><h2>🎉 Add Promotion</h2>
+  <div class="field"><label>Title *</label><input type="text" id="promoTitle" placeholder="e.g. Mega Sale Weekend"/></div>
+  <div class="field"><label>Description</label><textarea id="promoDesc" placeholder="Tell customers about this promotion…"></textarea></div>
+  <div class="field"><label>Badge</label><input type="text" id="promoBadge" placeholder="HOT DEAL · LIMITED TIME"/></div>
+  <div class="field"><label>Image URL</label><input type="url" id="promoImg" placeholder="https://…"/></div>
+  <div class="field"><label>Link 🔗</label><input type="url" id="promoLink" placeholder="https://…"/></div>
+  <div class="field-2"><div class="field"><label>Start Date</label><input type="date" id="promoStart"/></div>
+  <div class="field"><label>End Date</label><input type="date" id="promoEnd"/></div></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('promoModal')">Cancel</button><button class="btn btn-primary" onclick="doAddPromotion()">Add Promotion</button></div>
+</div></div>
+
+<div class="modal-ov" id="addUserModal" onclick="handleOC(event,'addUserModal')"><div class="modal"><h2>👤 Create User</h2>
+  <div class="field"><label>Full Name</label><input type="text" id="nuName" placeholder="Full name"/></div>
+  <div class="field"><label>Email</label><input type="email" id="nuEmail" placeholder="user@example.com"/></div>
+  <div class="field"><label>Password</label><input type="password" id="nuPass" placeholder="Min 6 characters"/></div>
+  <div class="field"><label>Role</label><select id="nuRole"><option value="user">User</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('addUserModal')">Cancel</button><button class="btn btn-primary" onclick="doCreateUser()">Create User</button></div>
+</div></div>
+
+<div class="modal-ov" id="profileModal" onclick="handleOC(event,'profileModal')"><div class="modal"><h2>👤 My Profile</h2>
+  <div class="modal-tabs">
+    <button class="modal-tab active" onclick="switchMTab('profInfo',this)">Profile</button>
+    <button class="modal-tab" onclick="switchMTab('profPass',this)">Password</button>
+  </div>
+  <div id="tab-profInfo" class="tab-panel active">
+    <div class="field"><label>Display Name</label><input type="text" id="profName" placeholder="Your name"/></div>
+    <div class="field"><label>Photo URL</label><input type="url" id="profPhoto" placeholder="https://… (optional)"/></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('profileModal')">Cancel</button><button class="btn btn-primary" onclick="doUpdateProfile()">Save</button></div>
+  </div>
+  <div id="tab-profPass" class="tab-panel">
+    <div class="field"><label>Current Password</label><input type="password" id="currPass"/></div>
+    <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Min 6 characters"/></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('profileModal')">Cancel</button><button class="btn btn-primary" onclick="doChangePassword()">Change Password</button></div>
+  </div>
+</div></div>
+
+<!-- IN-APP BROWSER -->
+<div id="inAppBrowser">
+  <div class="iab-bar">
+    <button class="iab-btn" id="iabBtnBack" onclick="iabBack()" title="Back">&#8592;</button>
+    <button class="iab-btn" id="iabBtnFwd"  onclick="iabForward()" title="Forward">&#8594;</button>
+    <button class="iab-btn" onclick="iabReload()" title="Reload">&#8635;</button>
+    <div class="iab-url-row">
+      <span class="iab-lock">🔒</span>
+      <input id="iabUrlBar" class="iab-url-input" type="text" spellcheck="false" placeholder="Enter a URL…"
+        onkeydown="if(event.key==='Enter')iabGo(this.value)"/>
+    </div>
+    <button class="iab-btn" onclick="window.open(_iabUrl,'_blank')" title="Open in browser" style="font-size:19px">&#8599;</button>
+    <button class="iab-btn iab-x-btn" onclick="closeBrowser()" title="Close">&#10005;</button>
+  </div>
+  <div id="iabProgress"><div id="iabProgressFill"></div></div>
+  <div id="iabWrap">
+    <iframe id="iabFrame"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+      allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+    <div id="iabBlock">
+      <div style="font-size:54px">&#128683;</div>
+      <h3 id="iabBlockTitle">Page cannot be shown here</h3>
+      <p id="iabBlockMsg">This website blocks embedding. Open it in your browser.</p>
+      <a id="iabBlockLink" href="#" target="_blank" class="btn btn-primary" style="margin-top:8px">Open in Browser &#8599;</a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
