@@ -142,19 +142,17 @@ function formatDate(str) {
 function collectPF(px) {
   return {
     title: fv(px+'Title'), desc: fv(px+'Desc'),
-    price: parseFloat(fv(px+'Price')) || 0,
     cat: fv(px+'Cat'), img: fv(px+'Img'), img2: fv(px+'Img2'), img3: fv(px+'Img3'),
-    link: fv(px+'Link'), stock: fv(px+'Stock'), sku: fv(px+'Sku'), badge: fv(px+'Badge')
+    link: fv(px+'Link'), badge: fv(px+'Badge')
   };
 }
 function clearPF(px) {
-  ['Title','Desc','Price','Cat','Img','Img2','Img3','Link','Stock','Sku','Badge'].forEach(function(f){ setVal(px+f,''); });
+  ['Title','Desc','Cat','Img','Img2','Img3','Link','Badge'].forEach(function(f){ setVal(px+f,''); });
 }
 function setPF(px, p) {
-  setVal(px+'Title',p.title); setVal(px+'Desc',p.desc);   setVal(px+'Price',p.price);
-  setVal(px+'Cat',p.cat);     setVal(px+'Img',p.img);     setVal(px+'Img2',p.img2);
-  setVal(px+'Img3',p.img3);   setVal(px+'Link',p.link);   setVal(px+'Stock',p.stock);
-  setVal(px+'Sku',p.sku);     setVal(px+'Badge',p.badge);
+  setVal(px+'Title',p.title); setVal(px+'Desc',p.desc);
+  setVal(px+'Cat',p.cat);     setVal(px+'Img',p.img);   setVal(px+'Img2',p.img2);
+  setVal(px+'Img3',p.img3);   setVal(px+'Link',p.link); setVal(px+'Badge',p.badge);
 }
 
 // ── AUTH LISTENER ────────────────────────────────────────────────────────────
@@ -512,10 +510,6 @@ function pCard(p, canEdit, compact) {
   var link = p.link || '';
   var oCls = 'btn-addcart' + (link ? '' : ' btn-addcart-disabled');
   var stockHtml = '';
-  if (p.stock !== undefined && p.stock !== '') {
-    var inStock = parseInt(p.stock) > 0;
-    stockHtml = '<span class="stock-tag '+(inStock?'in':'out')+'">'+(inStock?'In Stock':'Out')+'</span>';
-  }
   var badgeHtml = p.badge ? '<span class="badge">'+p.badge+'</span>'
     : p.featured ? '<span class="badge badge-gold">⭐</span>'
     : p.cat ? '<span class="badge">'+p.cat+'</span>' : '';
@@ -526,7 +520,7 @@ function pCard(p, canEdit, compact) {
     +'<div class="pcard-body">'
     +'<h3 class="pcard-title">'+p.title+'</h3>'
     +(!compact && p.desc ? '<p class="pcard-desc">'+p.desc+'</p>' : '')
-    +'<div class="pcard-footer"><span class="pcard-price">RM '+parseFloat(p.price||0).toFixed(2)+'</span>'+stockHtml+'</div>'
+    
     +'<button class="'+oCls+'" data-link="'+link+'" onclick="event.stopPropagation();handleOrderNow(this)">🔗 Order Now</button>'
     +'</div></div>';
 }
@@ -554,10 +548,6 @@ function openProduct(id) {
     + (p.featured ? '<span class="pill pill-gold">⭐ Featured</span>' : '')
     + (p.cat ? '<span class="pill pill-cat">'+p.cat+'</span>' : '');
   var stockHtml = '';
-  if (p.stock !== undefined && p.stock !== '') {
-    var inStock = parseInt(p.stock)>0;
-    stockHtml = '<p class="pd-stock '+(inStock?'in':'out')+'">'+(inStock?'✅ In Stock ('+p.stock+' units)':'❌ Out of Stock')+'</p>';
-  }
   var adminHtml = canEdit ? '<div class="pd-admin">'
     +'<button class="btn-sm btn-edit" onclick="closePD();doEditProduct(\''+id+'\')">✏️ Edit</button>'
     +'<button class="btn-sm btn-edit" onclick="doToggleFeatured(\''+id+'\','+!!p.featured+')">'+(p.featured?'Unfeature':'⭐ Feature')+'</button>'
@@ -571,8 +561,8 @@ function openProduct(id) {
     +'<div class="pd-right">'
     +'<div class="pd-pills">'+pills+'</div>'
     +'<h2 class="pd-title">'+p.title+'</h2>'
-    +(p.sku?'<p class="pd-sku">SKU: '+p.sku+'</p>':'')
-    +'<div class="pd-price">RM '+parseFloat(p.price||0).toFixed(2)+'</div>'
+
+
     +stockHtml+(p.desc?'<p class="pd-desc">'+p.desc+'</p>':'')
     +'<div class="pd-actions">'+orderBtn+visitBtn+'</div>'
     +adminHtml+'</div></div>';
@@ -739,7 +729,7 @@ function renderManageList() {
     return '<div class="mrow">'
       +'<div class="mrow-thumb">'+(p.img?'<img src="'+p.img+'" onerror="this.parentElement.innerHTML=\'🖼️\'"/>':'🖼️')+'</div>'
       +'<div class="mrow-info"><strong>'+p.title+'</strong>'
-      +'<span>RM '+parseFloat(p.price||0).toFixed(2)+(p.cat?' · '+p.cat:'')+(p.sku?' · '+p.sku:'')+(p.stock!==undefined&&p.stock!==''?' · Stock: '+p.stock:'')+'</span></div>'
+      +(p.cat?'<span>'+p.cat+'</span>':'')+'</div>'
       +'<div class="mrow-acts">'
       +'<button class="star-btn'+(p.featured?' on':'')+'" onclick="doToggleFeatured(\''+p.id+'\','+!!p.featured+')" title="Feature">⭐</button>'
       +'<button class="btn-sm btn-edit" onclick="doEditProduct(\''+p.id+'\')">✏️ Edit</button>'
@@ -1429,32 +1419,26 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 <!-- MODALS -->
 <div class="modal-ov" id="productModal" onclick="handleOC(event,'productModal')"><div class="modal"><h2>➕ Add Product</h2>
-  <div class="field"><label>Title *</label><input type="text" id="pTitle" placeholder="Product name"/></div>
-  <div class="field"><label>Description</label><textarea id="pDesc" placeholder="Describe the product…"></textarea></div>
-  <div class="field-2"><div class="field"><label>Price (RM) *</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" min="0"/></div>
-  <div class="field"><label>Stock (units)</label><input type="number" id="pStock" placeholder="50" min="0"/></div></div>
-  <div class="field-2"><div class="field"><label>Category</label><input type="text" id="pCat" placeholder="e.g. Electronics"/></div>
-  <div class="field"><label>SKU</label><input type="text" id="pSku" placeholder="SKU-001"/></div></div>
-  <div class="field"><label>Badge Label</label><input type="text" id="pBadge" placeholder="NEW · SALE · HOT"/></div>
+  <div class="field"><label>Title *</label><input type="text" id="pTitle" placeholder="Merchant name"/></div>
+  <div class="field"><label>Description</label><textarea id="pDesc" placeholder="Describe the merchant…"></textarea></div>
+  <div class="field"><label>Category</label><input type="text" id="pCat" placeholder="e.g. Kopitiam, Restaurant, Retail"/></div>
+  <div class="field"><label>Badge Label</label><input type="text" id="pBadge" placeholder="NEW · HOT · FEATURED"/></div>
   <div class="field"><label>Main Image URL</label><input type="url" id="pImg" placeholder="https://…"/></div>
   <div class="field-2"><div class="field"><label>Image 2</label><input type="url" id="pImg2" placeholder="https://…"/></div>
   <div class="field"><label>Image 3</label><input type="url" id="pImg3" placeholder="https://…"/></div></div>
-  <div class="field"><label>Product Link 🔗</label><input type="url" id="pLink" placeholder="https://…"/></div>
+  <div class="field"><label>Order Link 🔗</label><input type="url" id="pLink" placeholder="https://… (e.g. Grab, Shopee, website)"/></div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button><button class="btn btn-primary" onclick="doAddProduct()">Add Product</button></div>
 </div></div>
 
 <div class="modal-ov" id="editProductModal" onclick="handleOC(event,'editProductModal')"><div class="modal"><h2>✏️ Edit Product</h2>
   <div class="field"><label>Title *</label><input type="text" id="epTitle"/></div>
   <div class="field"><label>Description</label><textarea id="epDesc"></textarea></div>
-  <div class="field-2"><div class="field"><label>Price (RM) *</label><input type="number" id="epPrice" step="0.01" min="0"/></div>
-  <div class="field"><label>Stock</label><input type="number" id="epStock" min="0"/></div></div>
-  <div class="field-2"><div class="field"><label>Category</label><input type="text" id="epCat"/></div>
-  <div class="field"><label>SKU</label><input type="text" id="epSku"/></div></div>
+  <div class="field"><label>Category</label><input type="text" id="epCat"/></div>
   <div class="field"><label>Badge</label><input type="text" id="epBadge"/></div>
   <div class="field"><label>Main Image URL</label><input type="url" id="epImg"/></div>
   <div class="field-2"><div class="field"><label>Image 2</label><input type="url" id="epImg2"/></div>
   <div class="field"><label>Image 3</label><input type="url" id="epImg3"/></div></div>
-  <div class="field"><label>Product Link 🔗</label><input type="url" id="epLink"/></div>
+  <div class="field"><label>Order Link 🔗</label><input type="url" id="epLink"/></div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('editProductModal')">Cancel</button><button class="btn btn-primary" onclick="doSaveEdit(document.getElementById('editProductModal').dataset.pid)">Save Changes</button></div>
 </div></div>
 
