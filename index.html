@@ -800,8 +800,46 @@ function showApp() {
   el('navManage').style.display    = isAdmin ? '' : 'none';
   el('navMedia').style.display     = isAdmin ? '' : 'none';
   el('navSuperAdmin').style.display = isSA   ? '' : 'none';
+  // Show mobile bottom nav on small screens
+  var nav = el('mobBottomNav');
+  var bar = el('mobSearchBar');
+  if (nav) { nav.style.display = 'flex'; }
+  if (bar) { bar.style.display = 'block'; }
+  // Add bottom padding so content isn't hidden behind nav
+  var content = document.querySelector('.content');
+  if (content && window.innerWidth <= 480) content.style.paddingBottom = '80px';
   renderSidebarUser();
   showView('merchant');
+}
+
+function mobNav(view, btn) {
+  document.querySelectorAll('.mob-nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  showView(view);
+  // Also sync sidebar nav
+  document.querySelectorAll('.nav-lnk').forEach(function(b){ b.classList.remove('active'); });
+  var sideBtn = document.querySelector('.nav-lnk[data-view="'+view+'"]');
+  if (sideBtn) sideBtn.classList.add('active');
+}
+
+function toggleMobSearch() {
+  var bar = el('mobSearchBar');
+  if (!bar) return;
+  var isOpen = bar.classList.contains('open');
+  if (isOpen) {
+    bar.classList.remove('open');
+    var inp = el('mobSearchInput');
+    if (inp) { inp.value = ''; filterProducts(); }
+  } else {
+    bar.classList.add('open');
+    setTimeout(function(){ var inp = el('mobSearchInput'); if(inp) inp.focus(); }, 200);
+  }
+}
+
+function filterProductsMob(q) {
+  var mainInp = el('searchInput');
+  if (mainInp) mainInp.value = q;
+  filterProducts();
 }
 
 function showView(v) {
@@ -809,6 +847,9 @@ function showView(v) {
   document.querySelectorAll('.nav-lnk').forEach(function(x){ x.classList.remove('active'); });
   var ve=el('view-'+v); if(ve) ve.classList.add('active');
   var btn=document.querySelector('[data-view="'+v+'"]'); if(btn) btn.classList.add('active');
+  // Sync mobile bottom nav
+  document.querySelectorAll('.mob-nav-btn[data-view]').forEach(function(b){ b.classList.remove('active'); });
+  var mobBtn=document.querySelector('.mob-nav-btn[data-view="'+v+'"]'); if(mobBtn) mobBtn.classList.add('active');
   var titles={merchant:'Merchant',vouchers:'Vouchers',promotions:'Promotions',dashboard:'Dashboard',products:'Manage Merchant',media:'Banners & Announcements',users:'User Management'};
   setText('topTitle', titles[v]||v);
   closeSidebar();
@@ -900,7 +941,7 @@ document.addEventListener('keydown', function(e){
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{font-family:var(--body);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body{font-family:var(--body);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-text-size-adjust:100%}
 a{color:inherit;text-decoration:none}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
@@ -942,7 +983,7 @@ a{color:inherit;text-decoration:none}
 .field-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 20px;border:none;border-radius:10px;font-family:var(--body);font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 20px;border:none;border-radius:10px;font-family:var(--body);font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
 .btn-primary:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px rgba(var(--aRGB),.3)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
@@ -962,7 +1003,7 @@ a{color:inherit;text-decoration:none}
 .sbar-logo .logo-text{font-size:17px}
 .nav-section{padding:12px 8px 6px;flex:1;overflow-y:auto}
 .nav-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:8px 10px 4px}
-.nav-lnk{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--muted);font-size:14px;font-weight:500;cursor:pointer;transition:all .18s;margin-bottom:1px;border:none;background:transparent;width:100%;text-align:left}
+.nav-lnk{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--muted);font-size:14px;font-weight:500;cursor:pointer;transition:all .18s;margin-bottom:1px;border:none;background:transparent;width:100%;text-align:left;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .nav-lnk:hover{background:var(--panel);color:var(--text)}
 .nav-lnk.active{background:rgba(var(--aRGB),.12);color:var(--accent)}
 .nav-lnk .ico{font-size:16px;width:20px;text-align:center}
@@ -981,7 +1022,7 @@ a{color:inherit;text-decoration:none}
 
 /* MAIN */
 .main{margin-left:var(--nav);flex:1;display:flex;flex-direction:column;min-height:100vh}
-.topbar{position:sticky;top:0;z-index:100;background:rgba(11,13,17,.88);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:13px 22px;display:flex;align-items:center;gap:12px}
+.topbar{position:sticky;top:0;z-index:100;background:rgba(11,13,17,.88);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:13px 22px;display:flex;align-items:center;gap:12px;padding-top:max(13px,env(safe-area-inset-top))}
 .topbar-ham{display:none;background:transparent;border:none;color:var(--text);font-size:22px;cursor:pointer;padding:2px 6px}
 .topbar-title{font-family:var(--head);font-size:18px;font-weight:700;flex:1}
 .search-wrap{position:relative}
@@ -1035,7 +1076,7 @@ a{color:inherit;text-decoration:none}
 .sec-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
 .sec-hdr h2{font-family:var(--head);font-size:17px;font-weight:700;flex:1}
 #productGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
-.pcard{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .25s,box-shadow .25s,border-color .25s;cursor:pointer}
+.pcard{background:var(--sf);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .25s,box-shadow .25s,border-color .25s;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .pcard:hover{transform:translateY(-4px);box-shadow:0 14px 40px rgba(0,0,0,.5);border-color:rgba(var(--aRGB),.3)}
 .pcard-img{height:185px;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:44px;position:relative;overflow:hidden}
 .pcard-img img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
@@ -1204,24 +1245,222 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 .empty-icon{font-size:44px;margin-bottom:10px}
 .empty-msg{color:var(--muted);font-size:13px;padding:16px}
 
-/* RESPONSIVE */
+/* MOBILE BOTTOM NAV ─────────────────────────────────────────────────────── */
+.mob-bottom-nav{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;
+  background:var(--sf);border-top:1px solid var(--border);
+  padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  gap:0;
+}
+.mob-nav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:transparent;border:none;color:var(--muted);
+  font-family:var(--body);font-size:10px;font-weight:500;
+  cursor:pointer;padding:6px 2px;border-radius:10px;transition:all .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.mob-nav-btn.active{color:var(--accent)}
+.mob-nav-btn:active{transform:scale(.92)}
+.mob-nav-icon{font-size:20px;line-height:1}
+.mob-nav-label{font-size:10px;font-weight:500;white-space:nowrap}
+
+/* Mobile search bar */
+.mob-search-bar{
+  display:none;position:fixed;top:54px;left:0;right:0;z-index:149;
+  background:var(--sf);border-bottom:1px solid var(--border);
+  padding:10px 14px;transform:translateY(-100%);transition:transform .25s;
+}
+.mob-search-bar.open{transform:translateY(0)}
+.mob-search-inner{
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:10px;padding:0 12px;height:38px;
+}
+.mob-search-inner input{
+  flex:1;background:transparent;border:none;outline:none;
+  color:var(--text);font-size:14px;font-family:var(--body);
+}
+
+/* RESPONSIVE ─────────────────────────────────────────────────────────────── */
+
+/* ── Tablet / small desktop (≤820px) ─────────────────────────────────────── */
 @media(max-width:820px){
   :root{--nav:0px}
-  #sidebar{transform:translateX(-240px);width:240px}
+
+  /* Sidebar slides in from left */
+  #sidebar{transform:translateX(-240px);width:240px;box-shadow:var(--shadow)}
   #sidebar.mob-open{transform:translateX(0)}
-  .main{margin-left:0}.topbar-ham{display:block}
-  .search-wrap input{width:150px}.search-wrap input:focus{width:180px}
+  .main{margin-left:0}
+
+  /* Topbar */
+  .topbar{padding:10px 14px;gap:8px}
+  .topbar-ham{display:block}
+  .topbar-title{font-size:16px}
+  .search-wrap input{width:130px;font-size:13px}
+  .search-wrap input:focus{width:165px}
+
+  /* Content */
+  .content{padding:14px}
+
+  /* Grid layouts */
   .dash-grid{grid-template-columns:1fr}
-  #productGrid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px}
-  .pd-box{flex-direction:column;overflow-y:auto}.pd-left{width:100%}
-  .auth-wrap{grid-template-columns:1fr;max-width:420px}.auth-hero{display:none}.auth-form{padding:36px 24px}
+  .stats-row{grid-template-columns:repeat(2,1fr);gap:10px}
+  #productGrid{grid-template-columns:repeat(2,1fr);gap:12px}
   #voucherList{grid-template-columns:1fr}
-}
-@media(max-width:480px){
-  .content{padding:14px}.topbar{padding:11px 14px}
-  .stats-row{grid-template-columns:1fr 1fr}
-  #productGrid{grid-template-columns:1fr 1fr;gap:10px}
+  #promoGrid{grid-template-columns:1fr}
   .field-2{grid-template-columns:1fr}
+
+  /* Product cards smaller */
+  .pcard-img{height:150px}
+  .pcard-body{padding:10px}
+  .pcard-title{font-size:13px}
+  .btn-addcart{font-size:12px;padding:7px}
+
+  /* Product detail - stack vertically */
+  .pd-box{flex-direction:column;max-height:95vh;overflow-y:auto;border-radius:16px}
+  .pd-left{width:100%;flex-shrink:0}
+  .pd-main-img{height:220px}
+  .pd-right{padding:16px}
+  .pd-title{font-size:18px}
+  .pd-actions{flex-wrap:wrap}
+  .pd-actions .btn{flex:1;min-width:0;font-size:13px;padding:10px 12px}
+
+  /* Auth */
+  .auth-wrap{grid-template-columns:1fr;max-width:420px;border-radius:16px}
+  .auth-hero{display:none}
+  .auth-form{padding:32px 24px}
+
+  /* Featured strip */
+  .feat-scroll .pcard{min-width:160px;max-width:160px}
+  .feat-scroll .pcard .pcard-img{height:110px}
+
+  /* Manage merchant rows */
+  .mrow{flex-wrap:wrap;gap:10px}
+  .mrow-acts{width:100%;justify-content:flex-end}
+
+  /* Media rows */
+  .media-row{flex-wrap:wrap;gap:10px}
+  .media-acts{margin-left:auto}
+
+  /* Voucher cards */
+  .voucher-card{flex-direction:column}
+  .vc-left{border-right:none;border-bottom:2px dashed var(--border);padding-bottom:12px}
+  .vc-right{width:100%;flex-direction:row;justify-content:space-between;padding:12px 16px}
+  .vc-discount{font-size:22px}
+
+  /* Banner carousel */
+  #bannerCarousel{height:200px}
+  .c-cap h2{font-size:17px}
+  .c-cap p{font-size:13px}
+
+  /* Modals */
+  .modal{padding:20px;border-radius:16px;width:100%}
+  .modal h2{font-size:16px;margin-bottom:14px}
+
+  /* Table */
+  .tbl-wrap{font-size:12px}
+  th{padding:10px 10px;font-size:10px}
+  td{padding:10px 10px}
+
+  /* In-app browser toolbar */
+  .iab-bar{padding:6px 8px;gap:4px;height:50px}
+  .iab-btn{width:30px;height:30px;font-size:15px}
+
+  /* Announcement bar */
+  .ann-bar{padding:10px 14px;font-size:12px}
+}
+
+/* ── Mobile (≤480px) ─────────────────────────────────────────────────────── */
+@media(max-width:480px){
+  /* Topbar - hide search, just show icon */
+  .topbar{padding:9px 12px;gap:6px}
+  .topbar-title{font-size:15px}
+  .search-wrap{display:none}
+
+  /* Full width product grid - 2 columns */
+  #productGrid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .pcard-img{height:130px;font-size:32px}
+  .pcard-body{padding:8px}
+  .pcard-title{font-size:12px;-webkit-line-clamp:2}
+  .btn-addcart{font-size:11px;padding:6px}
+
+  /* Stats - 2 col */
+  .stats-row{grid-template-columns:repeat(2,1fr);gap:8px}
+  .stat-card{padding:14px}
+  .stat-val{font-size:26px}
+  .stat-label{font-size:10px}
+
+  /* Auth form */
+  .auth-form{padding:24px 18px}
+  .auth-tabs{margin-bottom:18px}
+  .auth-notice{font-size:12px;padding:10px 12px}
+
+  /* Product detail - full screen */
+  #pdModal{padding:0}
+  .pd-box{border-radius:0;max-height:100vh;border:none}
+  .pd-main-img{height:200px}
+  .pd-right{padding:14px}
+  .pd-title{font-size:16px}
+  .pd-price{font-size:22px}
+  .pd-actions .btn{font-size:12px;padding:9px 10px}
+
+  /* Sidebar */
+  #sidebar{width:80vw}
+
+  /* Carousel */
+  #bannerCarousel{height:170px;border-radius:10px}
+  .c-cap{padding:20px 14px 12px}
+  .c-cap h2{font-size:14px}
+  .c-cap p{display:none}
+  .c-btn{font-size:20px;padding:4px 10px}
+
+  /* Category bar */
+  .cat-btn{padding:6px 12px;font-size:12px}
+
+  /* Featured strip */
+  .feat-scroll .pcard{min-width:140px;max-width:140px}
+  .feat-scroll .pcard .pcard-img{height:95px}
+
+  /* Voucher cards */
+  .vc-code{font-size:17px}
+  .vc-discount{font-size:20px}
+  .vc-copy{font-size:11px;padding:6px 10px}
+
+  /* Promo cards */
+  .promo-img{height:140px}
+  .promo-title{font-size:14px}
+
+  /* Manage list */
+  .mrow-thumb{width:44px;height:44px;font-size:18px}
+  .mrow-info strong{font-size:13px}
+  .mrow-info span{font-size:11px}
+
+  /* Media rows */
+  .media-thumb{width:54px;height:38px}
+
+  /* Modal full screen on tiny screens */
+  .modal-ov{padding:0;align-items:flex-end}
+  .modal{border-radius:16px 16px 0 0;max-height:92vh;padding:20px 16px}
+
+  /* Table - hide less important columns */
+  .tbl-wrap th:nth-child(4),.tbl-wrap td:nth-child(4),
+  .tbl-wrap th:nth-child(5),.tbl-wrap td:nth-child(5){display:none}
+
+  /* In-app browser */
+  .iab-bar{height:46px;padding:5px 6px}
+  .iab-btn{width:28px;height:28px;font-size:14px}
+
+  /* Bottom nav for mobile */
+  .mob-bottom-nav{display:flex}
+}
+
+/* ── Extra small (≤360px) ────────────────────────────────────────────────── */
+@media(max-width:360px){
+  #productGrid{grid-template-columns:1fr 1fr;gap:6px}
+  .pcard-img{height:115px}
+  .pcard-title{font-size:11px}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .field input,.field select,.field textarea{font-size:13px;padding:10px 11px}
 }
 </style>
 </head>
@@ -1416,6 +1655,35 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 <!-- Product Detail -->
 <div id="pdModal" onclick="if(event.target===this)closePD()"></div>
+
+<!-- Mobile Bottom Navigation -->
+<nav class="mob-bottom-nav" id="mobBottomNav">
+  <button class="mob-nav-btn active" data-view="merchant" onclick="mobNav('merchant',this)">
+    <span class="mob-nav-icon">🏪</span><span class="mob-nav-label">Merchant</span>
+  </button>
+  <button class="mob-nav-btn" data-view="vouchers" onclick="mobNav('vouchers',this)">
+    <span class="mob-nav-icon">🎟️</span><span class="mob-nav-label">Vouchers</span>
+  </button>
+  <button class="mob-nav-btn" data-view="promotions" onclick="mobNav('promotions',this)">
+    <span class="mob-nav-icon">🎉</span><span class="mob-nav-label">Promos</span>
+  </button>
+  <button class="mob-nav-btn" id="mobSearchBtn" onclick="toggleMobSearch()">
+    <span class="mob-nav-icon">🔍</span><span class="mob-nav-label">Search</span>
+  </button>
+  <button class="mob-nav-btn" onclick="openProfileModal()">
+    <span class="mob-nav-icon">👤</span><span class="mob-nav-label">Profile</span>
+  </button>
+</nav>
+
+<!-- Mobile Search Bar (slides down) -->
+<div class="mob-search-bar" id="mobSearchBar">
+  <div class="mob-search-inner">
+    <span style="color:var(--muted);font-size:14px">🔍</span>
+    <input type="text" id="mobSearchInput" placeholder="Search merchants…"
+      oninput="filterProductsMob(this.value)" autocomplete="off"/>
+    <button onclick="toggleMobSearch()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+  </div>
+</div>
 
 <!-- MODALS -->
 <div class="modal-ov" id="productModal" onclick="handleOC(event,'productModal')"><div class="modal"><h2>➕ Add Product</h2>
