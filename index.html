@@ -381,7 +381,7 @@ function doSaveEdit(id) {
 }
 
 function doDeleteProduct(id) {
-  if (!confirm('Delete this product?')) return;
+  if (!confirm('Delete this merchant?')) return;
   db.collection('products').doc(id).delete().then(function(){ showToast('Deleted','success'); })
     .catch(function(e){ showToast(e.message,'error'); });
 }
@@ -1525,7 +1525,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
       <!-- MANAGE MERCHANT -->
       <div id="view-products" class="view">
-        <div class="sec-hdr"><h2>🏪 Manage Merchant</h2><button class="btn btn-primary" onclick="openModal('productModal')">+ Add Product</button></div>
+        <div class="sec-hdr"><h2>🏪 Manage Merchant</h2><button class="btn btn-primary" onclick="openModal('productModal')">+ Add Merchant</button></div>
         <div id="manageList"></div>
       </div>
 
@@ -1557,7 +1557,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 
 <!-- MODALS -->
-<div class="modal-ov" id="productModal" onclick="handleOC(event,'productModal')"><div class="modal"><h2>➕ Add Product</h2>
+<div class="modal-ov" id="productModal" onclick="handleOC(event,'productModal')"><div class="modal"><h2>➕ Add Merchant</h2>
   <div class="field"><label>Title *</label><input type="text" id="pTitle" placeholder="Merchant name"/></div>
   <div class="field"><label>Description</label><textarea id="pDesc" placeholder="Describe the merchant…"></textarea></div>
   <div class="field"><label>Category</label><input type="text" id="pCat" placeholder="e.g. Kopitiam, Restaurant, Retail"/></div>
@@ -1569,7 +1569,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button><button class="btn btn-primary" onclick="doAddProduct()">Add Product</button></div>
 </div></div>
 
-<div class="modal-ov" id="editProductModal" onclick="handleOC(event,'editProductModal')"><div class="modal"><h2>✏️ Edit Product</h2>
+<div class="modal-ov" id="editProductModal" onclick="handleOC(event,'editProductModal')"><div class="modal"><h2>✏️ Edit Merchant</h2>
   <div class="field"><label>Title *</label><input type="text" id="epTitle"/></div>
   <div class="field"><label>Description</label><textarea id="epDesc"></textarea></div>
   <div class="field"><label>Category</label><input type="text" id="epCat"/></div>
