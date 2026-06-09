@@ -116,8 +116,24 @@ function setLoading(id, on, label) {
 function openModal(id)  { var m = el(id); if (m) m.classList.add('open'); }
 function closeModal(id) { var m = el(id); if (m) m.classList.remove('open'); }
 function handleOC(e, id) { if (e.target === e.currentTarget) closeModal(id); }
-function openSidebar()  { el('sidebar').classList.add('mob-open');    el('sbarOvl').classList.add('open'); }
-function closeSidebar() { el('sidebar').classList.remove('mob-open'); el('sbarOvl').classList.remove('open'); }
+function openSidebar() {
+  var sb = el('sidebar'), ov = el('sbarOvl');
+  if(sb){ sb.style.transform = 'translateX(0)'; sb.classList.add('mob-open'); }
+  if(ov){ ov.style.display = 'block'; }
+}
+function closeSidebar() {
+  var sb = el('sidebar'), ov = el('sbarOvl');
+  // On desktop keep visible, on mobile hide
+  if(sb){
+    if(window.innerWidth >= 821){
+      sb.style.transform = 'translateX(0)';
+    } else {
+      sb.style.transform = 'translateX(-240px)';
+    }
+    sb.classList.remove('mob-open');
+  }
+  if(ov){ ov.style.display = 'none'; }
+}
 
 function switchAuthTab(name, btn) {
   document.querySelectorAll('.auth-tabs .auth-tab').forEach(function(t){ t.classList.remove('active'); });
@@ -808,6 +824,19 @@ function showApp() {
   el('appLoader').style.display   = 'none';
   el('authSection').style.display = 'none';
   el('appSection').style.display  = 'flex';
+  // Set correct sidebar state for current screen size
+  var sb = el('sidebar');
+  if(sb){
+    if(window.innerWidth >= 821){
+      sb.style.transform = 'translateX(0)';
+      var main = document.querySelector('.main');
+      if(main) main.style.marginLeft = '240px';
+    } else {
+      sb.style.transform = 'translateX(-240px)';
+      var main = document.querySelector('.main');
+      if(main) main.style.marginLeft = '0';
+    }
+  }
   var role=_state.role, isAdmin=(role==='admin'||role==='super_admin'), isSA=(role==='super_admin');
   el('navManage').style.display    = isAdmin ? '' : 'none';
   el('navMedia').style.display     = isAdmin ? '' : 'none';
@@ -891,6 +920,37 @@ function _iabShowBlock(url, title, msg) {
   var lnk=el('iabBlockLink'); if(lnk) lnk.href=url;
   el('iabBlock').classList.add('show'); el('iabFrame').style.opacity='0.05';
 }
+
+// ── On load: set sidebar visibility based on screen size ─────────────────────
+(function initSidebarLayout(){
+  function setSidebar(){
+    var sb = el('sidebar');
+    var ov = el('sbarOvl');
+    if(!sb) return;
+    if(window.innerWidth >= 821){
+      // Desktop: show sidebar, give main margin
+      sb.style.transform = 'translateX(0)';
+      var main = document.querySelector('.main');
+      if(main) main.style.marginLeft = '240px';
+      if(ov) ov.style.display = 'none';
+    } else {
+      // Mobile: hide sidebar, full-width main
+      if(!sb.classList.contains('mob-open')){
+        sb.style.transform = 'translateX(-240px)';
+      }
+      var main = document.querySelector('.main');
+      if(main) main.style.marginLeft = '0';
+    }
+  }
+  // Run immediately
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setSidebar);
+  } else {
+    setSidebar();
+  }
+  // Re-run on resize
+  window.addEventListener('resize', setSidebar);
+})();
 
 document.addEventListener('keydown', function(e){
   if (e.key==='Escape') {
@@ -1407,8 +1467,8 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
 
 <!-- APP -->
 <div id="appSection">
-  <div id="sbarOvl" onclick="closeSidebar()"></div>
-  <nav id="sidebar">
+  <div id="sbarOvl" onclick="closeSidebar()" style="display:none"></div>
+  <nav id="sidebar" style="transform:translateX(-240px)">
     <div class="sbar-logo">
       <div class="logo-mark" style="width:30px;height:30px;font-size:13px;border-radius:8px">B</div>
       <span class="logo-text">BigPOS Market</span>
@@ -1459,7 +1519,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
           <div class="sec-hdr"><h2>⭐ Featured</h2></div>
           <div class="feat-scroll" id="featuredRow"></div>
         </div>
-        <div class="sec-hdr"><h2>All Merchants</h2><span id="productCount" style="color:var(--muted);font-size:13px"></span></div>
+        <div class="sec-hdr"><h2>All Products</h2><span id="productCount" style="color:var(--muted);font-size:13px"></span></div>
         <div id="productGrid"><div class="empty-state"><div class="empty-icon">🛍️</div><p>Loading…</p></div></div>
       </div>
 
