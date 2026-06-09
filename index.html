@@ -523,7 +523,7 @@ function renderShop() {
   var grid = el('productGrid');
   if (!grid) return;
   grid.innerHTML = list.length ? list.map(function(p){ return pCard(p, canEdit, false); }).join('')
-    : '<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found.</p></div>';
+    : '<div class="empty-state"><div class="empty-icon">🔍</div><p>No merchants found.</p></div>';
 }
 
 function pCard(p, canEdit, compact) {
@@ -1566,7 +1566,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
   <div class="field-2"><div class="field"><label>Image 2</label><input type="url" id="pImg2" placeholder="https://…"/></div>
   <div class="field"><label>Image 3</label><input type="url" id="pImg3" placeholder="https://…"/></div></div>
   <div class="field"><label>Order Link 🔗</label><input type="url" id="pLink" placeholder="https://… (e.g. Grab, Shopee, website)"/></div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button><button class="btn btn-primary" onclick="doAddProduct()">Add Product</button></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button><button class="btn btn-primary" onclick="doAddProduct()">Add Merchant</button></div>
 </div></div>
 
 <div class="modal-ov" id="editProductModal" onclick="handleOC(event,'editProductModal')"><div class="modal"><h2>✏️ Edit Merchant</h2>
