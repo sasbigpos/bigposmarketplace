@@ -178,6 +178,7 @@ auth.onAuthStateChanged(function(fbUser) {
         auth.signOut();
         el('appLoader').style.display = 'none';
         el('authSection').style.display = 'flex';
+        setLoading('btnLogin', false, 'Sign In');
         showToast('Account suspended. Contact admin.', 'error');
         return;
       }
@@ -189,6 +190,8 @@ auth.onAuthStateChanged(function(fbUser) {
       console.error('Firestore error:', err.code, err.message);
       el('appLoader').style.display = 'none';
       el('authSection').style.display = 'flex';
+      setLoading('btnLogin', false, 'Sign In');
+      setLoading('btnReg',   false, 'Create Account');
       if (err.code === 'permission-denied') {
         showToast('Firestore rules error — update security rules in Firebase Console', 'error');
       } else {
@@ -201,6 +204,15 @@ auth.onAuthStateChanged(function(fbUser) {
     el('appLoader').style.display = 'none';
     el('authSection').style.display = 'flex';
     el('appSection').style.display  = 'none';
+    // Reset all auth buttons so they are never stuck in loading state
+    setLoading('btnLogin',  false, 'Sign In');
+    setLoading('btnForgot', false, 'Forgot password?');
+    setLoading('btnReg',    false, 'Create Account');
+    // Clear any auth message boxes
+    clearAuthMsg('login');
+    clearAuthMsg('reg');
+    // Clear password fields for security
+    var lp = el('loginPass'); if(lp) lp.value = '';
   }
 });
 
