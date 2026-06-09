@@ -1467,7 +1467,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
       <button class="topbar-ham" onclick="openSidebar()">☰</button>
       <span class="topbar-title" id="topTitle">Merchant</span>
       <div class="search-wrap"><span class="si">🔍</span>
-        <input type="text" id="searchInput" placeholder="Search products…" oninput="filterProducts()"/></div>
+        <input type="text" id="searchInput" placeholder="Search merchants…" oninput="filterProducts()"/></div>
       <button class="ico-btn" onclick="openProfileModal()" title="Profile">👤</button>
     </div>
     <div id="annBar" style="display:none"></div>
@@ -1481,7 +1481,7 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
           <div class="sec-hdr"><h2>⭐ Featured</h2></div>
           <div class="feat-scroll" id="featuredRow"></div>
         </div>
-        <div class="sec-hdr"><h2>All Products</h2><span id="productCount" style="color:var(--muted);font-size:13px"></span></div>
+        <div class="sec-hdr"><h2>All Merchants</h2><span id="productCount" style="color:var(--muted);font-size:13px"></span></div>
         <div id="productGrid"><div class="empty-state"><div class="empty-icon">🛍️</div><p>Loading…</p></div></div>
       </div>
 
@@ -1500,13 +1500,13 @@ td{padding:12px 15px;font-size:13px;border-top:1px solid var(--border);vertical-
       <!-- DASHBOARD -->
       <div id="view-dashboard" class="view">
         <div class="stats-row">
-          <div class="stat-card"><div class="stat-label">Products</div><div class="stat-val gold" id="statProducts">0</div></div>
+          <div class="stat-card"><div class="stat-label">Merchants</div><div class="stat-val gold" id="statProducts">0</div></div>
           <div class="stat-card"><div class="stat-label">Featured</div><div class="stat-val" id="statFeatured">0</div></div>
           <div class="stat-card"><div class="stat-label">Categories</div><div class="stat-val" id="statCategories">0</div></div>
           <div class="stat-card"><div class="stat-label">Users</div><div class="stat-val" id="statUsers">—</div></div>
         </div>
         <div class="dash-grid">
-          <div class="dash-card"><h3>📊 Products by Category</h3><div id="catChart"><p class="empty-msg">No data</p></div></div>
+          <div class="dash-card"><h3>📊 Merchants by Category</h3><div id="catChart"><p class="empty-msg">No data</p></div></div>
           <div class="dash-card">
             <h3>🔐 Permissions</h3>
             <table class="perm-t" style="width:100%">
